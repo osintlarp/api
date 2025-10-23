@@ -2,45 +2,28 @@ from bs4 import BeautifulSoup
 import requests
 import random
 import time
-import threading
-import os
 
 USER_PRESENCE_MAP = {0: "Offline", 1: "Online", 2: "In-Game", 3: "In-Studio", 4: "Invisible"}
 
 PROXIES_FILE = "proxies.txt"
-ROBLOSEC_FILE = "robloxsec.txt"
 PROXIES = []
-SINGLE_ROBLOSEC = None
 PROXY_INDEX = 0
-_proxy_lock = threading.Lock()
 
 def load_proxies():
     global PROXIES
-    if os.path.exists(PROXIES_FILE):
+    try:
         with open(PROXIES_FILE, "r", encoding="utf-8") as f:
             PROXIES = [l.strip() for l in f if l.strip()]
-    else:
+    except FileNotFoundError:
         PROXIES = []
-
-def load_roblosec():
-    global SINGLE_ROBLOSEC
-    SINGLE_ROBLOSEC = None
-    if os.path.exists(ROBLOSEC_FILE):
-        with open(ROBLOSEC_FILE, "r", encoding="utf-8") as f:
-            for line in f:
-                token = line.strip()
-                if token:
-                    SINGLE_ROBLOSEC = token
-                    break
 
 def get_next_proxy():
     global PROXY_INDEX
-    with _proxy_lock:
-        if not PROXIES:
-            return None
-        proxy = PROXIES[PROXY_INDEX % len(PROXIES)]
-        PROXY_INDEX += 1
-        return proxy
+    if not PROXIES:
+        return None
+    proxy = PROXIES[PROXY_INDEX % len(PROXIES)]
+    PROXY_INDEX += 1
+    return proxy
 
 def get_user_agent():
     user_agents = [
@@ -51,256 +34,191 @@ def get_user_agent():
     ]
     return random.choice(user_agents)
 
-def roblox_request(method, url, headers=None, json_payload=None, params=None, use_proxy=False, max_retries=3):
-    headers = headers.copy() if headers else {}
-    used_token = False
-    cookie_dict = {}
-    if SINGLE_ROBLOSEC:
-        used_token = True
-        cookie_dict = {".ROBLOSECURITY": SINGLE_ROBLOSEC}
-        headers["Cookie"] = headers.get("Cookie", f".ROBLOSECURITY={SINGLE_ROBLOSEC}")
-    headers["User-Agent"] = headers.get("User-Agent") or get_user_agent()
+def request_with_retries(url, headers=None, max_retries=3):
     retries = 0
-    initial_rate_limited = False
     while retries < max_retries:
+        proxy = get_next_proxy()
+        proxies = {"http": f"http://{proxy}", "https": f"http://{proxy}"} if proxy else None
         try:
-            proxies = None
-            if use_proxy:
-                proxy = get_next_proxy()
-                if proxy:
-                    proxy_url = f"http://{proxy}"
-                    proxies = {"http": proxy_url, "https": proxy_url}
-            resp = requests.request(method, url, headers=headers, json=json_payload, params=params, cookies=cookie_dict, proxies=proxies, timeout=15)
-            if resp.status_code in (401, 403) and "x-csrf-token" in resp.headers:
-                headers["x-csrf-token"] = resp.headers["x-csrf-token"]
+            response = requests.get(url, headers=headers, proxies=proxies, timeout=10)
+            if response.status_code == 429:
                 retries += 1
+                time.sleep(1)
                 continue
-            if resp.status_code == 200:
-                return resp, None, used_token
-            if resp.status_code == 429:
-                initial_rate_limited = True
-                break
-            retries += 1
-            time.sleep(0.5)
+            return response
         except requests.RequestException:
             retries += 1
             time.sleep(0.5)
-    if initial_rate_limited:
-        if not PROXIES:
-            return None, "Rate-Limited by Roblox ? Proxies not responding", used_token
-        for _ in range(len(PROXIES)):
-            proxy = get_next_proxy()
-            if not proxy:
-                break
-            proxy_url = f"http://{proxy}"
-            proxies = {"http": proxy_url, "https": proxy_url}
-            try:
-                resp = requests.request(method, url, headers=headers, json=json_payload, params=params, cookies=cookie_dict, proxies=proxies, timeout=15)
-                if resp.status_code in (401, 403) and "x-csrf-token" in resp.headers:
-                    headers["x-csrf-token"] = resp.headers["x-csrf-token"]
-                    resp = requests.request(method, url, headers=headers, json=json_payload, params=params, cookies=cookie_dict, proxies=proxies, timeout=15)
-                if resp.status_code == 200:
-                    return resp, None, used_token
-                if resp.status_code == 429:
-                    time.sleep(0.5)
-                    continue
-            except requests.RequestException:
-                time.sleep(0.2)
-                continue
-        return None, "Rate-Limited by Roblox ? Proxies not responding", used_token
-    return None, "Failed to fetch", used_token
+    return None
 
 def search_by_username(username):
     url = f"https://users.roblox.com/v1/users/search?keyword={username}&limit=10"
-    headers = {"User-Agent": get_user_agent()}
-    r, err, used = roblox_request("GET", url, headers=headers)
-    if err and r is None:
-        return {"error": err, "used_account_token": used}
-    if r and r.status_code == 200:
-        data = r.json()
-        if data.get("data"):
-            first = data["data"][0]
-            return (first.get("id") or first.get("userId")) , used
-    url = f"https://www.roblox.com/users/profile?username={username}"
-    headers = {"User-Agent": get_user_agent()}
-    r, err, used = roblox_request("GET", url, headers=headers)
-    if err and r is None:
-        return {"error": err, "used_account_token": used}
-    if r and r.status_code == 200 and "users" in r.url:
-        parts = r.url.split("/")
-        for i, part in enumerate(parts):
-            if part == "users" and i + 1 < len(parts):
-                user_id = parts[i + 1]
-                if user_id.isdigit():
-                    return user_id, used
-    return None, used
+    headers = {'User-Agent': get_user_agent()}
+    response = request_with_retries(url, headers)
+    if response and response.status_code == 200:
+        data = response.json()
+        if data['data']:
+            if 'id' in data['data'][0]:
+                return str(data['data'][0]['id'])
+            elif 'userId' in data['data'][0]:
+                return str(data['data'][0]['userId'])
+    try:
+        url = f"https://www.roblox.com/users/profile?username={username}"
+        headers = {'User-Agent': get_user_agent()}
+        response = requests.get(url, headers=headers, allow_redirects=True)
+        if response.status_code == 200 and 'users' in response.url:
+            parts = response.url.split('/')
+            for i, part in enumerate(parts):
+                if part == 'users' and i + 1 < len(parts):
+                    user_id = parts[i + 1]
+                    if user_id.isdigit():
+                        return user_id
+    except:
+        pass
+    return None
 
 def get_previous_usernames(user_id):
     url = f"https://users.roblox.com/v1/users/{user_id}/username-history?limit=100&sortOrder=Asc"
-    headers = {"User-Agent": get_user_agent()}
-    r, err, used = roblox_request("GET", url, headers=headers)
-    if err and r is None:
-        return {"error": err, "used_account_token": used}
-    if r and r.status_code == 200:
-        return [entry["name"] for entry in r.json().get("data", [])], used
-    return [], used
+    headers = {'User-Agent': get_user_agent()}
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        return [entry['name'] for entry in response.json()['data']]
+    return []
 
 def get_groups(user_id):
     url = f"https://groups.roblox.com/v2/users/{user_id}/groups/roles"
-    headers = {"User-Agent": get_user_agent()}
-    r, err, used = roblox_request("GET", url, headers=headers)
-    if err and r is None:
-        return {"error": err, "used_account_token": used}
+    headers = {'User-Agent': get_user_agent()}
+    response = requests.get(url, headers=headers)
     groups = []
-    if r and r.status_code == 200:
-        for group in r.json().get("data", []):
-            g = group.get("group", {})
-            groups.append({"name": g.get("name"), "link": f"https://www.roblox.com/groups/{g.get('id')}", "members": g.get("memberCount")})
-    return groups, used
+    if response.status_code == 200:
+        for group in response.json()['data']:
+            groups.append({
+                'name': group['group']['name'],
+                'link': f"https://www.roblox.com/groups/{group['group']['id']}",
+                'members': group['group']['memberCount']
+            })
+    return groups
 
 def get_about_me(user_id):
     url = f"https://www.roblox.com/users/{user_id}/profile"
-    headers = {"User-Agent": get_user_agent()}
-    r, err, used = roblox_request("GET", url, headers=headers)
-    if err and r is None:
-        return {"error": err, "used_account_token": used}
-    if r and r.status_code == 200:
-        soup = BeautifulSoup(r.text, "html.parser")
-        about_me = soup.find("span", class_="profile-about-content-text linkify")
+    headers = {'User-Agent': get_user_agent()}
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        soup = BeautifulSoup(response.text, 'html.parser')
+        about_me = soup.find('span', class_='profile-about-content-text linkify')
         if about_me:
-            return about_me.text.strip(), used
-        about_me_div = soup.find("div", class_="profile-about-content")
+            return about_me.text.strip()
+        about_me_div = soup.find('div', class_='profile-about-content')
         if about_me_div:
-            span = about_me_div.find("span")
+            span = about_me_div.find('span')
             if span:
-                return span.text.strip(), used
-    return "Not available", used
+                return span.text.strip()
+    return "Not available"
 
 def get_entity_list(user_id, entity_type):
-    endpoint_map = {
-        "friends_list": "friends",
-        "followers_list": "followers",
-        "following_list": "followings"
-    }
-    actual_endpoint = endpoint_map.get(entity_type)
-    if not actual_endpoint:
-        return []
-
-    entities = set()
+    entities = set()  
     cursor = ""
-    headers = {"User-Agent": get_user_agent()}
-    cookies = {".ROBLOSECURITY": SINGLE_ROBLOSEC} if SINGLE_ROBLOSEC else {}
-
+    endpoint_map = {"friends_list":"friends","followers_list":"followers","following_list":"followings"}
+    actual_endpoint = endpoint_map.get(entity_type, entity_type)
     while True:
         url = f"https://friends.roblox.com/v1/users/{user_id}/{actual_endpoint}?limit=100&cursor={cursor}"
-        response = requests.get(url, headers=headers, cookies=cookies)
+        headers = {'User-Agent': get_user_agent()}
+        response = requests.get(url, headers=headers)
         if response.status_code != 200:
             break
         data = response.json()
-        for entity in data.get("data", []):
+        for entity in data.get('data', []):
             if "displayName" in entity:
-                name = entity.get("displayName") or entity.get("username", "No Name")
-                entity_id = entity.get("id", "")
+                name = entity.get("displayName") or entity.get("username","No Name")
+                entity_id = entity.get("id","")
             elif "name" in entity:
                 name = entity["name"]
                 entity_id = entity["id"]
             elif "user" in entity and isinstance(entity["user"], dict):
                 user_data = entity["user"]
-                name = user_data.get("displayName") or user_data.get("name", "No Name")
-                entity_id = user_data.get("id", "")
+                name = user_data.get("displayName") or user_data.get("name","No Name")
+                entity_id = user_data.get("id","")
             else:
                 name = "Unknown"
-                entity_id = entity.get("id", "")
+                entity_id = entity.get("id","")
             if entity_id:
-                entities.add((name, f"https://www.roblox.com/users/{entity_id}/profile"))
+                entities.add((name,f"https://www.roblox.com/users/{entity_id}/profile"))
         cursor = data.get("nextPageCursor")
         if not cursor:
             break
         time.sleep(0.2)
-    return [{"name": n, "url": u} for n, u in entities]
+    return [{"name":n,"url":u} for n,u in entities]
 
 def get_presence(user_id):
     url = "https://presence.roblox.com/v1/presence/users"
-    headers = {"User-Agent": get_user_agent()}
-    payload = {"userIds": [int(user_id)]}
-    r, err, used = roblox_request("POST", url, headers=headers, json_payload=payload)
-    if err and r is None:
-        return {"error": err, "used_account_token": used}
-    if r and r.status_code == 200:
-        data = r.json()
-        if data.get("userPresences"):
-            p = data["userPresences"][0]
-            pt = p.get("userPresenceType")
-            return {"status": USER_PRESENCE_MAP.get(pt, f"Unknown ({pt})"), "last_location": p.get("lastLocation", "N/A"), "place_id": p.get("placeId"), "last_online": p.get("lastOnline")}, used
-    return None, used
+    headers = {'User-Agent': get_user_agent()}
+    payload = {"userIds":[int(user_id)]}
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        if response.status_code == 200:
+            d = response.json()
+            if d.get("userPresences"):
+                p = d["userPresences"][0]
+                pt = p.get("userPresenceType")
+                return {"status": USER_PRESENCE_MAP.get(pt, f"Unknown ({pt})"),
+                        "last_location": p.get("lastLocation","N/A"),
+                        "place_id": p.get("placeId"),
+                        "last_online": p.get("lastOnline")}
+    except:
+        pass
+    return None
 
-def get_user_info(identifier, options):
-    used_flags = {"used_account_token": False}
-    if identifier.isdigit():
-        user_id = identifier
-        search_used = False
-    else:
-        res = search_by_username(identifier)
-        if isinstance(res, dict) and res.get("error"):
-            return res
-        user_id, search_used = res
-        used_flags["used_account_token"] = used_flags["used_account_token"] or (isinstance(res, tuple) and res[1])
+def get_user_info(identifier, options=None):
+    if options is None:
+        options = {}
+    user_id = identifier if identifier.isdigit() else search_by_username(identifier)
     if not user_id:
         return None
-    headers = {"User-Agent": get_user_agent()}
-    user_url = f"https://users.roblox.com/v1/users/{user_id}"
-    r, err, used = roblox_request("GET", user_url, headers=headers)
-    used_flags["used_account_token"] = used_flags["used_account_token"] or used
-    if err and r is None:
-        return {"error": err, "used_account_token": used_flags["used_account_token"]}
-    if not r or r.status_code != 200:
+
+    headers = {'User-Agent': get_user_agent()}
+    user_response = request_with_retries(f"https://users.roblox.com/v1/users/{user_id}", headers)
+    if not user_response or user_response.status_code != 200:
         return None
-    u = r.json()
-    def count(url):
-        r, err, used = roblox_request("GET", url, headers=headers)
-        used_flags["used_account_token"] = used_flags["used_account_token"] or used
-        if err and r is None:
-            return {"error": err, "used_account_token": used_flags["used_account_token"]}
-        if r and r.status_code == 200:
-            return r.json().get("count", 0)
-        return 0
-    fcount = count(f"https://friends.roblox.com/v1/users/{user_id}/friends/count") if options.get("friends", True) else None
-    fo_count = count(f"https://friends.roblox.com/v1/users/{user_id}/followers/count") if options.get("followers", True) else None
-    fi_count = count(f"https://friends.roblox.com/v1/users/{user_id}/followings/count") if options.get("following", True) else None
+    u = user_response.json()
+
+    def maybe_count(url, flag=True):
+        if flag:
+            r = requests.get(url, headers=headers)
+            if r.status_code == 200:
+                return r.json().get('count',0)
+        return None
+
+    friends_count = maybe_count(f"https://friends.roblox.com/v1/users/{user_id}/friends/count", options.get("friends", True))
+    followers_count = maybe_count(f"https://friends.roblox.com/v1/users/{user_id}/followers/count", options.get("followers", True))
+    following_count = maybe_count(f"https://friends.roblox.com/v1/users/{user_id}/followings/count", options.get("following", True))
+
     def maybe_list(name):
-        if options.get(name, False):
-            l, used = get_entity_list(user_id, name)
-            used_flags["used_account_token"] = used_flags["used_account_token"] or used
-            return l
-        return []
-    friends_list = maybe_list("friends_list")
-    followers_list = maybe_list("followers_list")
-    following_list = maybe_list("following_list")
-    previous_usernames, used = get_previous_usernames(user_id) if options.get("previous_usernames", True) else ([], False)
-    used_flags["used_account_token"] = used_flags["used_account_token"] or used
-    groups, used = get_groups(user_id) if options.get("groups", True) else ([], False)
-    used_flags["used_account_token"] = used_flags["used_account_token"] or used
-    about_me, used = get_about_me(user_id) if options.get("about_me", True) else ("Not available", False)
-    used_flags["used_account_token"] = used_flags["used_account_token"] or used
-    presence_info, used = get_presence(user_id) if options.get("presence", True) else (None, False)
-    used_flags["used_account_token"] = used_flags["used_account_token"] or used
+        return get_entity_list(user_id,name) if options.get(name, False) else []
+
+    previous_usernames = get_previous_usernames(user_id) if options.get("previous_usernames", False) else []
+    groups = get_groups(user_id) if options.get("groups", False) else []
+    about_me = get_about_me(user_id) if options.get("about_me", False) else "Not available"
+    presence = get_presence(user_id) if options.get("presence", False) else None
+
     return {
         "user_id": user_id,
-        "alias": u["name"],
+        "alias": u['name'],
         "display_name": u.get("displayName"),
-        "description": u.get("description", ""),
-        "is_banned": u.get("isBanned", False),
-        "has_verified_badge": u.get("hasVerifiedBadge", False),
-        "friends": fcount,
-        "followers": fo_count,
-        "following": fi_count,
+        "description": u.get("description",""),
+        "is_banned": u.get("isBanned",False),
+        "has_verified_badge": u.get("hasVerifiedBadge",False),
+        "friends": friends_count,
+        "followers": followers_count,
+        "following": following_count,
         "join_date": u.get("created"),
         "previous_usernames": previous_usernames,
         "groups": groups,
         "about_me": about_me,
-        "friends_list": friends_list,
-        "followers_list": followers_list,
-        "following_list": following_list,
-        "presence": presence_info,
-        **used_flags
+        "friends_list": maybe_list("friends_list"),
+        "followers_list": maybe_list("followers_list"),
+        "following_list": maybe_list("following_list"),
+        "presence": presence
     }
+
+load_proxies()
+
