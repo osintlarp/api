@@ -184,30 +184,40 @@ def get_entity_list(user_id, entity_type):
     }
     actual_endpoint = endpoint_map.get(entity_type)
     if not actual_endpoint:
-        return [], False
+        return []
+
     entities = set()
     cursor = ""
     headers = {"User-Agent": get_user_agent()}
-    any_used = False
+    cookies = {".ROBLOSECURITY": SINGLE_ROBLOSEC} if SINGLE_ROBLOSEC else {}
+
     while True:
         url = f"https://friends.roblox.com/v1/users/{user_id}/{actual_endpoint}?limit=100&cursor={cursor}"
-        r, err, used = roblox_request("GET", url, headers=headers)
-        if err and r is None:
-            return {"error": err, "used_account_token": used}
-        any_used = any_used or used
-        if not r or r.status_code != 200:
+        response = requests.get(url, headers=headers, cookies=cookies)
+        if response.status_code != 200:
             break
-        data = r.json()
+        data = response.json()
         for entity in data.get("data", []):
-            entity_id = entity.get("id") or entity.get("user", {}).get("id")
-            name = entity.get("displayName") or entity.get("name") or entity.get("user", {}).get("displayName") or entity.get("user", {}).get("name")
-            if entity_id and name:
+            if "displayName" in entity:
+                name = entity.get("displayName") or entity.get("username", "No Name")
+                entity_id = entity.get("id", "")
+            elif "name" in entity:
+                name = entity["name"]
+                entity_id = entity["id"]
+            elif "user" in entity and isinstance(entity["user"], dict):
+                user_data = entity["user"]
+                name = user_data.get("displayName") or user_data.get("name", "No Name")
+                entity_id = user_data.get("id", "")
+            else:
+                name = "Unknown"
+                entity_id = entity.get("id", "")
+            if entity_id:
                 entities.add((name, f"https://www.roblox.com/users/{entity_id}/profile"))
         cursor = data.get("nextPageCursor")
         if not cursor:
             break
         time.sleep(0.2)
-    return [{"name": n, "url": u} for n, u in entities], any_used
+    return [{"name": n, "url": u} for n, u in entities]
 
 def get_presence(user_id):
     url = "https://presence.roblox.com/v1/presence/users"
