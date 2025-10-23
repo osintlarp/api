@@ -1,11 +1,12 @@
 from flask import Flask, request, jsonify
-from datetime import datetime, timedelta
+from datetime import timedelta
+import time
 from roblox import get_user_info
 
 app = Flask(__name__)
 
 RATE_LIMIT = 10
-RATE_PERIOD = timedelta(minutes=30)
+RATE_PERIOD = 30*60
 requests_tracker = {}
 
 ALLOWED_ORIGINS = ["https://api.vaul3t.org"] 
@@ -21,16 +22,15 @@ def get_client_ip():
 
 def is_rate_limited(client_ip):
     now = time.time()
-    window_start = now - RATE_LIMIT_WINDOW_SECONDS
-    with _store_lock:
-        timestamps = _requests_store.get(client_ip, [])
-        timestamps = [t for t in timestamps if t > window_start]
-        if len(timestamps) >= RATE_LIMIT_COUNT:
-            retry_after = int(RATE_LIMIT_WINDOW_SECONDS - (now - timestamps[0])) if timestamps else RATE_LIMIT_WINDOW_SECONDS
-            return True, retry_after
-        timestamps.append(now)
-        _requests_store[client_ip] = timestamps
-        return False, 0
+    window_start = now - RATE_PERIOD
+    timestamps = requests_tracker.get(client_ip, [])
+    timestamps = [t for t in timestamps if t > window_start]
+    if len(timestamps) >= RATE_LIMIT:
+        retry_after = int(RATE_PERIOD - (now - timestamps[0]))
+        return True, retry_after
+    timestamps.append(now)
+    requests_tracker[client_ip] = timestamps
+    return False, 0
 
 @app.after_request
 def apply_cors(response):
@@ -61,9 +61,7 @@ def roblox_lookup():
         return jsonify({'error': data.get('error')}), 400
     if data:
         return jsonify(data)
-    else:
-        return jsonify({'error': 'User not found'}), 404
-
+    return jsonify({'error': 'User not found'}), 404
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
