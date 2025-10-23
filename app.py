@@ -1,79 +1,100 @@
-from flask import Flask, jsonify, request
+from flask import Flask, request, jsonify, make_response
+from functools import wraps
 import time
-import threading
+from collections import defaultdict
+import roblox
 import os
-from roblox import load_proxies, load_roblosec, get_user_info
+
 app = Flask(__name__)
 
-RATE_LIMIT_COUNT = 10
-RATE_LIMIT_WINDOW_SECONDS = 30 * 60
+roblox.load_roblosec()
+roblox.load_proxies()
 
-_requests_store = {}
-_store_lock = threading.Lock()
+RATE_LIMIT = 10
+RATE_PERIOD = 30 * 60
+requests_log = defaultdict(list)
 
-load_proxies()
-load_roblosec()
+ALLOWED_ORIGINS = {
+    "https://vaul3t.org",
+    "https://api.vaul3t.org"
+}
 
-def get_client_ip():
-    xff = request.headers.get('X-Forwarded-For', '')
-    if xff:
-        return xff.split(',')[0].strip()
-    real_ip = request.headers.get('X-Real-IP')
-    if real_ip:
-        return real_ip
-    return request.remote_addr or "unknown"
-
-def is_rate_limited(client_ip):
-    now = time.time()
-    window_start = now - RATE_LIMIT_WINDOW_SECONDS
-    with _store_lock:
-        timestamps = _requests_store.get(client_ip, [])
-        timestamps = [t for t in timestamps if t > window_start]
-        if len(timestamps) >= RATE_LIMIT_COUNT:
-            retry_after = int(RATE_LIMIT_WINDOW_SECONDS - (now - timestamps[0])) if timestamps else RATE_LIMIT_WINDOW_SECONDS
-            return True, retry_after
-        timestamps.append(now)
-        _requests_store[client_ip] = timestamps
-        return False, 0
-
-def parse_bool_param(name, default=True):
-    val = request.args.get(name)
-    if val is None:
+def parse_bool(qs_value, default=True):
+    if qs_value is None:
         return default
-    return val.lower() not in ("0", "false", "no")
+    return qs_value.lower() not in ("0", "false", "no")
+
+def rate_limited(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+        now = time.time()
+        requests_log[ip] = [t for t in requests_log[ip] if now - t < RATE_PERIOD]
+        if len(requests_log[ip]) >= RATE_LIMIT:
+            return jsonify({"error": f"Rate limit exceeded ({RATE_LIMIT} per 30 min)"}), 429
+        requests_log[ip].append(now)
+        return func(*args, **kwargs)
+    return wrapper
 
 @app.before_request
-def before_request():
-    if request.endpoint == "roblox_lookup":
-        client_ip = get_client_ip()
-        limited, retry_after = is_rate_limited(client_ip)
-        if limited:
-            return jsonify({"error": "rate_limited", "retry_after_seconds": retry_after}), 429
+def check_origin_and_options():
+    origin = request.headers.get("Origin")
+    if request.method == "OPTIONS":
+        if origin and origin not in ALLOWED_ORIGINS:
+            return jsonify({"error": "Origin not allowed"}), 403
+        resp = make_response()
+        resp.headers["Access-Control-Allow-Origin"] = origin if origin else ""
+        resp.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+        resp.headers["Access-Control-Max-Age"] = "3600"
+        return resp
+    if origin:
+        if origin not in ALLOWED_ORIGINS:
+            return jsonify({"error": "Origin not allowed"}), 403
 
-@app.route("/v1/osint/roblox", methods=["GET"])
-def roblox_lookup():
-    identifier = request.args.get("username") or request.args.get("id")
-    if not identifier:
-        return jsonify({"error": "Missing ?username= or ?id="}), 400
+@app.after_request
+def add_cors_header(response):
+    origin = request.headers.get("Origin")
+    if origin and origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+    return response
+
+@app.route("/v1/osint/roblox", methods=["GET", "OPTIONS"])
+@rate_limited
+def osint_roblox():
+    if request.method == "OPTIONS":
+        return jsonify({}), 204
+
+    username = request.args.get("username")
+    if not username:
+        return jsonify({"error": "username parameter required"}), 400
+
     options = {
-        "groups": parse_bool_param("groups", True),
-        "friends": parse_bool_param("friends", True),
-        "followers": parse_bool_param("followers", True),
-        "followings": parse_bool_param("followings", True),
-        "friends_list": parse_bool_param("friends_list", True),
-        "followers_list": parse_bool_param("followers_list", True),
-        "following_list": parse_bool_param("following_list", True),
-        "previous_usernames": parse_bool_param("previous_usernames", True),
-        "about_me": parse_bool_param("about_me", True),
-        "presence": parse_bool_param("presence", True)
+        "friends": parse_bool(request.args.get("friends"), True),
+        "followers": parse_bool(request.args.get("followers"), True),
+        "following": parse_bool(request.args.get("following"), True),
+        "friends_list": parse_bool(request.args.get("friends_list"), False),
+        "followers_list": parse_bool(request.args.get("followers_list"), False),
+        "following_list": parse_bool(request.args.get("following_list"), False),
+        "previous_usernames": parse_bool(request.args.get("previous_usernames"), True),
+        "groups": parse_bool(request.args.get("groups"), True),
+        "about_me": parse_bool(request.args.get("about_me"), True),
+        "presence": parse_bool(request.args.get("presence"), True),
     }
-    data = get_user_info(identifier, options)
-    if isinstance(data, dict) and data.get("error"):
-        status = 429 if "Rate-Limited" in data.get("error") else 400
-        return jsonify(data), status
-    if data:
+
+    try:
+        data = roblox.get_user_info(username, options)
+        if isinstance(data, dict) and data.get("error"):
+            status = 429 if "Rate-Limited" in data.get("error") else 400
+            data.setdefault("used_account_token", roblox.SINGLE_ROBLOSEC is not None)
+            return jsonify(data), status
+        if not data:
+            return jsonify({"error": "User not found", "used_account_token": roblox.SINGLE_ROBLOSEC is not None}), 404
         return jsonify(data)
-    return jsonify({"error": "User not found", "used_account_token": (os.path.exists("robloxsec.txt") and open("robloxsec.txt").read().strip() != "")}), 404
+    except Exception as e:
+        return jsonify({"error": str(e), "used_account_token": roblox.SINGLE_ROBLOSEC is not None}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
