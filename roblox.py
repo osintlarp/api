@@ -1,286 +1,226 @@
-import requests
-import json
+from flask import Flask, jsonify, request
 from bs4 import BeautifulSoup
+import requests
 import random
 import time
-import os
 import threading
-from datetime import datetime, timedelta
+import os
+
+app = Flask(__name__)
 
 USER_PRESENCE_MAP = {
-    0: "Offline", 1: "Online", 2: "In-Game", 3: "In-Studio", 4: "Invisible"
+    0: "Offline",
+    1: "Online",
+    2: "In-Game",
+    3: "In-Studio",
+    4: "Invisible"
 }
+
+RATE_LIMIT_COUNT = 10
+RATE_LIMIT_WINDOW_SECONDS = 30 * 60
+
+_requests_store = {}
+_store_lock = threading.Lock()
 
 PROXIES_FILE = "proxies.txt"
 PROXIES = []
-_state_lock = threading.Lock()
-
-RATE_LIMIT_COUNT = 0
-RATE_LIMIT_THRESHOLD = 5
-PROXY_MODE_UNTIL = datetime.now() 
-PROXY_MODE_DURATION = timedelta(minutes=15)
-
-class RateLimitException(Exception):
-    pass
+PROXY_INDEX = 0
+_proxy_lock = threading.Lock()
 
 def load_proxies():
     global PROXIES
-    if not os.path.exists(PROXIES_FILE):
-        print(f"Warning: '{PROXIES_FILE}' not found. Proxy mode will not work.")
-        return
-    try:
+    if os.path.exists(PROXIES_FILE):
         with open(PROXIES_FILE, "r", encoding="utf-8") as f:
-            PROXIES = [line.strip() for line in f if line.strip()]
-        if PROXIES:
-            print(f"Successfully loaded {len(PROXIES)} proxies.")
-        else:
-            print(f"Warning: '{PROXIES_FILE}' is empty. Proxy mode will not work.")
-    except Exception as e:
-        print(f"Error loading proxies: {e}")
+            PROXIES = [l.strip() for l in f if l.strip()]
+    else:
+        PROXIES = []
 
-def get_random_proxy_dict():
-    if not PROXIES:
-        return None
-    proxy = random.choice(PROXIES)
-    if not proxy.startswith(('http://', 'https://')):
-        proxy = f'http://{proxy}'
-    return {"http": proxy, "https": proxy}
+load_proxies()
+
+def get_next_proxy():
+    global PROXY_INDEX
+    with _proxy_lock:
+        if not PROXIES:
+            return None
+        proxy = PROXIES[PROXY_INDEX % len(PROXIES)]
+        PROXY_INDEX += 1
+        return proxy
 
 def get_user_agent():
     user_agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.85 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15",
         "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0"
     ]
     return random.choice(user_agents)
 
-def _make_request(method, url, headers, json_payload=None, params=None, allow_redirects=False, timeout=10):
-    global RATE_LIMIT_COUNT, PROXY_MODE_UNTIL
-    
-    use_proxy = False
-    proxies = None
-
-    with _state_lock:
-        if datetime.now() < PROXY_MODE_UNTIL:
-            use_proxy = True
-        elif RATE_LIMIT_COUNT >= RATE_LIMIT_THRESHOLD:
-            PROXY_MODE_UNTIL = datetime.now() + PROXY_MODE_DURATION
-            RATE_LIMIT_COUNT = 0 
-            print(f"Rate limit threshold {RATE_LIMIT_THRESHOLD} hit. Engaging proxy mode for 15 minutes.")
-            use_proxy = True
-
-    if use_proxy:
-        proxies = get_random_proxy_dict()
-        if not proxies:
-            print("Proxy mode active, but no proxies are loaded or available. Request will likely fail.")
-    
-    try:
-        response = requests.request(
-            method,
-            url,
-            headers=headers,
-            json=json_payload,
-            params=params,
-            proxies=proxies,
-            allow_redirects=allow_redirects,
-            timeout=timeout
-        )
-    except requests.RequestException as e:
-        print(f"Request exception ({e}) for {url}. Retrying...")
-        raise RateLimitException() 
-
-    if response.status_code == 200:
-        return response
-    
-    if response.status_code == 429:
-        if not use_proxy:
-            with _state_lock:
-                RATE_LIMIT_COUNT += 1
-                print(f"Rate limit hit. Count: {RATE_LIMIT_COUNT}/{RATE_LIMIT_THRESHOLD}")
-        
-        wait_time = int(response.headers.get('Retry-After', 5))
-        print(f"Rate limited. Waiting {wait_time} seconds...")
-        time.sleep(wait_time)
-        raise RateLimitException() 
-    
-    print(f"Request failed for {url} with status {response.status_code}. Stopping retries.")
-    return None
-
-def request_with_retries(method, url, headers, json_payload=None, params=None, allow_redirects=False, max_retries=3):
+def try_request(method, url, headers=None, json_payload=None, params=None, max_retries=3, timeout=15):
+    headers = headers or {}
     retries = 0
+    initial_rate_limited = False
     while retries < max_retries:
         try:
-            response = _make_request(
-                method, url, headers, 
-                json_payload=json_payload, 
-                params=params, 
-                allow_redirects=allow_redirects
-            )
-            return response
-        
-        except RateLimitException:
+            if method.lower() == "get":
+                r = requests.get(url, headers=headers, params=params, timeout=timeout)
+            elif method.lower() == "post":
+                r = requests.post(url, headers=headers, json=json_payload, timeout=timeout)
+            else:
+                return None, False
+        except requests.RequestException:
             retries += 1
-            continue 
-            
-    print(f"Failed to fetch {url} after {max_retries} retries.")
-    return None
+            time.sleep(1)
+            continue
+        if r.status_code == 200:
+            return r, False
+        if r.status_code == 429:
+            initial_rate_limited = True
+            break
+        retries += 1
+        time.sleep(1)
+    if initial_rate_limited:
+        if not PROXIES:
+            return None, True
+        for _ in range(len(PROXIES)):
+            proxy = get_next_proxy()
+            if not proxy:
+                break
+            proxy_url = f"http://{proxy}"
+            proxies = {"http": proxy_url, "https": proxy_url}
+            try:
+                if method.lower() == "get":
+                    r = requests.get(url, headers=headers, params=params, proxies=proxies, timeout=timeout)
+                else:
+                    r = requests.post(url, headers=headers, json=json_payload, proxies=proxies, timeout=timeout)
+                if r.status_code == 200:
+                    return r, False
+                if r.status_code == 429:
+                    time.sleep(1)
+                    continue
+                time.sleep(0.5)
+                continue
+            except requests.RequestException:
+                time.sleep(0.5)
+                continue
+        return None, True
+    return None, False
 
 def search_by_username(username):
     url = f"https://users.roblox.com/v1/users/search?keyword={username}&limit=10"
     headers = {'User-Agent': get_user_agent()}
-    response = request_with_retries("get", url, headers=headers)
-    
-    if response and response.status_code == 200:
-        data = response.json()
-        if data['data']:
-            if 'id' in data['data'][0]:
-                return data['data'][0]['id']
-            elif 'userId' in data['data'][0]:
-                return data['data'][0]['userId']
-    
+    r, rate_limited = try_request("get", url, headers=headers)
+    if rate_limited and not r:
+        return {"error": "Rate-Limited by Roblox ? Proxies not responding"}
+    if r and r.status_code == 200:
+        data = r.json()
+        if data.get('data'):
+            first = data['data'][0]
+            return first.get('id') or first.get('userId')
     try:
         url = f"https://www.roblox.com/users/profile?username={username}"
         headers = {'User-Agent': get_user_agent()}
-        response = requests.get(url, headers=headers, allow_redirects=True)
-        
-        if response.status_code == 200 and 'users' in response.url:
-            parts = response.url.split('/')
+        r, rate_limited = try_request("get", url, headers=headers)
+        if rate_limited and not r:
+            return {"error": "Rate-Limited by Roblox ? Proxies not responding"}
+        if r and r.status_code == 200 and 'users' in r.url:
+            parts = r.url.split('/')
             for i, part in enumerate(parts):
                 if part == 'users' and i + 1 < len(parts):
                     user_id = parts[i + 1]
                     if user_id.isdigit():
                         return user_id
-    except Exception as e:
-        print(f"Error in redirect search for {username}: {e}")
+    except Exception:
         pass
-    
     return None
 
 def get_previous_usernames(user_id):
     url = f"https://users.roblox.com/v1/users/{user_id}/username-history?limit=100&sortOrder=Asc"
     headers = {'User-Agent': get_user_agent()}
-    response = requests.get(url, headers=headers)
-    
-    if response.status_code == 200:
-        data = response.json()
-        return [entry['name'] for entry in data['data']]
-    
+    r, rate_limited = try_request("get", url, headers=headers)
+    if rate_limited and not r:
+        return {"error": "Rate-Limited by Roblox ? Proxies not responding"}
+    if r and r.status_code == 200:
+        data = r.json()
+        return [entry['name'] for entry in data.get('data', [])]
     return []
 
 def get_groups(user_id):
     url = f"https://groups.roblox.com/v2/users/{user_id}/groups/roles"
     headers = {'User-Agent': get_user_agent()}
-    response = requests.get(url, headers=headers)
-    
+    r, rate_limited = try_request("get", url, headers=headers)
+    if rate_limited and not r:
+        return {"error": "Rate-Limited by Roblox ? Proxies not responding"}
     groups = []
-    if response.status_code == 200:
-        data = response.json()
-        for group in data['data']:
+    if r and r.status_code == 200:
+        data = r.json()
+        for group in data.get('data', []):
+            grp = group.get('group', {})
             groups.append({
-                'name': group['group']['name'],
-                'link': f"https://www.roblox.com/groups/{group['group']['id']}",
-                'members': group['group']['memberCount']
+                'name': grp.get('name'),
+                'link': f"https://www.roblox.com/groups/{grp.get('id')}",
+                'members': grp.get('memberCount')
             })
-    
     return groups
 
 def get_about_me(user_id):
     url = f"https://www.roblox.com/users/{user_id}/profile"
     headers = {'User-Agent': get_user_agent()}
-    response = requests.get(url, headers=headers)
-    
-    if response.status_code == 200:
-        soup = BeautifulSoup(response.text, 'html.parser')
+    r, rate_limited = try_request("get", url, headers=headers)
+    if rate_limited and not r:
+        return {"error": "Rate-Limited by Roblox ? Proxies not responding"}
+    if r and r.status_code == 200:
+        soup = BeautifulSoup(r.text, 'html.parser')
         about_me = soup.find('span', class_='profile-about-content-text linkify')
         if about_me:
             return about_me.text.strip()
-        else:
-            about_me_div = soup.find('div', class_='profile-about-content')
-            if about_me_div:
-                about_me_span = about_me_div.find('span')
-                if about_me_span:
-                    return about_me_span.text.strip()
-    
+        about_me_div = soup.find('div', class_='profile-about-content')
+        if about_me_div:
+            span = about_me_div.find('span')
+            if span:
+                return span.text.strip()
     return "Not available"
 
 def get_entity_list(user_id, entity_type):
-    entities = set()  
+    entities = set()
     cursor = ""
-    
+    headers = {'User-Agent': get_user_agent()}
     while True:
         url = f"https://friends.roblox.com/v1/users/{user_id}/{entity_type}?limit=100&cursor={cursor}"
-        headers = {'User-Agent': get_user_agent()}
-        response = requests.get(url, headers=headers)
-        
-        if response.status_code == 200:
-            data = response.json()
-            for entity in data['data']:
-                if 'displayName' in entity:
-                    name = entity.get('displayName') or entity.get('username', 'Usuario sin nombre')
-                    entity_id = entity.get('id', '')
-                elif 'name' in entity:
-                    name = entity['name']
-                    entity_id = entity['id']
-                elif 'user' in entity and isinstance(entity['user'], dict):
-                    user_data = entity['user']
-                    name = user_data.get('displayName') or user_data.get('name', 'Usuario sin nombre')
-                    entity_id = user_data.get('id', '')
-                else:
-                    available_keys = list(entity.keys())
-                    name = f"Usuario {available_keys}"
-                    entity_id = entity.get('id', '')
-                
-                if entity_id:
-                    entities.add((name, f"https://www.roblox.com/users/{entity_id}/profile"))
-            
-            cursor = data.get('nextPageCursor')
-            if not cursor:
-                break
-        else:
+        r, rate_limited = try_request("get", url, headers=headers)
+        if rate_limited and not r:
+            return {"error": "Rate-Limited by Roblox ? Proxies not responding"}
+        if not r or r.status_code != 200:
             break
-        
-        time.sleep(1)
-    
-    return [{'name': name, 'url': url} for name, url in entities]
+        data = r.json()
+        for entity in data.get('data', []):
+            entity_id = entity.get('id') or entity.get('user', {}).get('id')
+            name = entity.get('displayName') or entity.get('name') or entity.get('user', {}).get('displayName') or entity.get('user', {}).get('name')
+            if entity_id and name:
+                entities.add((name, f"https://www.roblox.com/users/{entity_id}/profile"))
+        cursor = data.get('nextPageCursor')
+        if not cursor:
+            break
+        time.sleep(0.3)
+    return [{'name': n, 'url': u} for n, u in entities]
 
-def get_presence(user_id, headers):
+def get_presence(user_id):
     url = "https://presence.roblox.com/v1/presence/users"
-    payload = {"userIds": [int(user_id)]}  
-    
-    retries = 0
-    max_retries = 3
-
-    while retries < max_retries:
-        try:
-            response = requests.post(url, headers=headers, json=payload)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("userPresences") and len(data["userPresences"]) > 0:
-                    presence_data = data["userPresences"][0]
-                    presence_type = presence_data.get("userPresenceType")
-                    
-                    return {
-                        "status": USER_PRESENCE_MAP.get(presence_type, f"Unknown ({presence_type})"),
-                        "last_location": presence_data.get("lastLocation", "N/A"),
-                        "place_id": presence_data.get("placeId"),
-                        "last_online": presence_data.get("lastOnline")
-                    }
-                return None
-            elif response.status_code == 429:
-                wait_time = int(response.headers.get('Retry-After', 5))
-                print(f"Rate limited on presence API. Waiting {wait_time} seconds...")
-                time.sleep(wait_time)
-                retries += 1
-            else:
-                print(f"Failed to get presence. Status: {response.status_code}, Response: {response.text}")
-                return None
-        except requests.RequestException as e:
-            print(f"Error during presence request: {e}")
-            time.sleep(5)
-            retries += 1
-    
-    print("Failed to get presence after retries.")
+    headers = {'User-Agent': get_user_agent()}
+    payload = {"userIds": [int(user_id)]}
+    r, rate_limited = try_request("post", url, headers=headers, json_payload=payload)
+    if rate_limited and not r:
+        return {"error": "Rate-Limited by Roblox ? Proxies not responding"}
+    if r and r.status_code == 200:
+        data = r.json()
+        if data.get("userPresences"):
+            presence_data = data["userPresences"][0]
+            pt = presence_data.get("userPresenceType")
+            return {
+                "status": USER_PRESENCE_MAP.get(pt, f"Unknown ({pt})"),
+                "last_location": presence_data.get("lastLocation", "N/A"),
+                "place_id": presence_data.get("placeId"),
+                "last_online": presence_data.get("lastOnline")
+            }
     return None
 
 def get_user_info(identifier):
@@ -288,69 +228,85 @@ def get_user_info(identifier):
         user_id = identifier
     else:
         user_id = search_by_username(identifier)
-    
+        if isinstance(user_id, dict) and user_id.get('error'):
+            return {'error': user_id['error']}
     if not user_id:
         return None
-    
-    user_url = f"https://users.roblox.com/v1/users/{user_id}"
     headers = {'User-Agent': get_user_agent()}
-    user_response = request_with_retries(user_url, headers=headers)
-    
-    if user_response and user_response.status_code == 200:
-        user_data = user_response.json()
-        
-        friends_url = f"https://friends.roblox.com/v1/users/{user_id}/friends/count"
-        friends_response = requests.get(friends_url, headers=headers)
-        friends_count = friends_response.json()['count'] if friends_response.status_code == 200 else 0
-        
-        followers_url = f"https://friends.roblox.com/v1/users/{user_id}/followers/count"
-        followings_url = f"https://friends.roblox.com/v1/users/{user_id}/followings/count"
-        followers_response = requests.get(followers_url, headers=headers)
-        followings_response = requests.get(followings_url, headers=headers)
-        followers_count = followers_response.json()['count'] if followers_response.status_code == 200 else 0
-        followings_count = followings_response.json()['count'] if followings_response.status_code == 200 else 0
-        
-        presence_info = get_presence(user_id, headers)
-        
-        previous_usernames = get_previous_usernames(user_id)
-        groups = get_groups(user_id)
-        about_me = get_about_me(user_id)
-        friends = get_entity_list(user_id, "friends")
-        followers = get_entity_list(user_id, "followers")
-        followings = get_entity_list(user_id, "followings")
-        
-        user_info_data = {
-            'user_id': user_id,
-            'alias': user_data['name'],
-            'display_name': user_data['displayName'],
-            'description': user_data.get('description', ''),
-            'is_banned': user_data.get('isBanned', False),
-            'has_verified_badge': user_data.get('hasVerifiedBadge', False),
-            'friends': friends_count,
-            'followers': followers_count,
-            'following': followings_count,
-            'join_date': user_data['created'],
-            'previous_usernames': previous_usernames,
-            'groups': groups,
-            'about_me': about_me,
-            'friends_list': friends,
-            'followers_list': followers,
-            'following_list': followings
-        }
-        
-        if presence_info:
-            user_info_data['presence_status'] = presence_info.get('status', 'N/A')
-            user_info_data['last_location'] = presence_info.get('last_location', 'N/A')
-            user_info_data['current_place_id'] = presence_info.get('place_id')
-            user_info_data['last_online_timestamp'] = presence_info.get('last_online')
-        else:
-            user_info_data['presence_status'] = 'Error fetching presence'
-            user_info_data['last_location'] = 'N/A'
-            user_info_data['current_place_id'] = None
-            user_info_data['last_online_timestamp'] = 'N/A'
-        
-        return user_info_data
-    
-    return None
-
-load_proxies()
+    user_url = f"https://users.roblox.com/v1/users/{user_id}"
+    user_resp, rate_limited = try_request("get", user_url, headers=headers)
+    if rate_limited and not user_resp:
+        return {'error': "Rate-Limited by Roblox ? Proxies not responding"}
+    if not user_resp or user_resp.status_code != 200:
+        return None
+    user_data = user_resp.json()
+    def cnt(url):
+        r, rl = try_request("get", url, headers=headers)
+        if rl and not r:
+            return {'error': "Rate-Limited by Roblox ? Proxies not responding"}
+        if r and r.status_code == 200:
+            return r.json().get('count', 0)
+        return 0
+    friends_count = cnt(f"https://friends.roblox.com/v1/users/{user_id}/friends/count")
+    if isinstance(friends_count, dict) and friends_count.get('error'):
+        return friends_count
+    followers_count = cnt(f"https://friends.roblox.com/v1/users/{user_id}/followers/count")
+    if isinstance(followers_count, dict) and followers_count.get('error'):
+        return followers_count
+    followings_count = cnt(f"https://friends.roblox.com/v1/users/{user_id}/followings/count")
+    if isinstance(followings_count, dict) and followings_count.get('error'):
+        return followings_count
+    presence_info = get_presence(user_id)
+    if isinstance(presence_info, dict) and presence_info.get('error'):
+        return presence_info
+    previous_usernames = get_previous_usernames(user_id)
+    if isinstance(previous_usernames, dict) and previous_usernames.get('error'):
+        return previous_usernames
+    groups = get_groups(user_id)
+    if isinstance(groups, dict) and groups.get('error'):
+        return groups
+    about_me = get_about_me(user_id)
+    if isinstance(about_me, dict) and about_me.get('error'):
+        return about_me
+    friends = get_entity_list(user_id, "friends")
+    if isinstance(friends, dict) and friends.get('error'):
+        return friends
+    followers = get_entity_list(user_id, "followers")
+    if isinstance(followers, dict) and followers.get('error'):
+        return followers
+    followings = get_entity_list(user_id, "followings")
+    if isinstance(followings, dict) and followings.get('error'):
+        return followings
+    result = {
+        'user_id': user_id,
+        'alias': user_data.get('name'),
+        'display_name': user_data.get('displayName'),
+        'description': user_data.get('description', ''),
+        'is_banned': user_data.get('isBanned', False),
+        'has_verified_badge': user_data.get('hasVerifiedBadge', False),
+        'friends': friends_count,
+        'followers': followers_count,
+        'following': followings_count,
+        'join_date': user_data.get('created'),
+        'previous_usernames': previous_usernames,
+        'groups': groups,
+        'about_me': about_me,
+        'friends_list': friends,
+        'followers_list': followers,
+        'following_list': followings
+    }
+    if presence_info:
+        result.update({
+            'presence_status': presence_info.get('status', 'N/A'),
+            'last_location': presence_info.get('last_location', 'N/A'),
+            'current_place_id': presence_info.get('place_id'),
+            'last_online_timestamp': presence_info.get('last_online')
+        })
+    else:
+        result.update({
+            'presence_status': 'Error fetching presence',
+            'last_location': 'N/A',
+            'current_place_id': None,
+            'last_online_timestamp': 'N/A'
+        })
+    return result
