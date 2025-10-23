@@ -8,7 +8,7 @@ RATE_LIMIT = 10
 RATE_PERIOD = timedelta(minutes=30)
 requests_tracker = {}
 
-ALLOWED_ORIGINS = ["https://api.vaul3t.org"]  # anpassen
+ALLOWED_ORIGINS = ["https://api.vaul3t.org"] 
 
 def check_rate_limit(ip):
     now = datetime.now()
@@ -25,22 +25,25 @@ def apply_cors(response):
     origin = request.headers.get('Origin')
     if origin in ALLOWED_ORIGINS:
         response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     return response
 
-@app.route('/v1/osint/roblox', methods=['GET'])
+@app.route('/v1/osint/roblox', methods=['GET', 'OPTIONS'])
 def roblox_lookup():
+    if request.method == 'OPTIONS':
+        return apply_cors(jsonify(success=True)), 200
+        
     identifier = request.args.get('username') or request.args.get('id')
     if not identifier:
         return jsonify({'error': 'Missing ?username= or ?id='}), 400
+    
     data = get_user_info(identifier)
-    if isinstance(data, dict) and data.get('error'):
-        if data.get('error') == "Rate-Limited by Roblox ? Proxies not responding":
-            return jsonify({'error': data.get('error')}), 429
-        return jsonify({'error': data.get('error')}), 400
+    
     if data:
         return jsonify(data)
     else:
-        return jsonify({'error': 'User not found'}), 404
+        return jsonify({'error': 'User not found or failed to fetch data'}), 404
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
