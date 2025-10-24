@@ -44,9 +44,14 @@ def validate_phone_number(phone_number):
     
     headers = {
         'Cookie': f'xsrf_token={token}',
-        'User-Agent': get_user_agent(),
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1',
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'X-XSRF-TOKEN': token,
+        'Origin': 'https://accounts.snapchat.com',
+        'Referer': 'https://accounts.snapchat.com/',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br'
     }
     
     data = {
@@ -57,7 +62,7 @@ def validate_phone_number(phone_number):
     
     url = 'https://accounts.snapchat.com/accounts/validate_phone_number'
     
-    response, error = try_request("post", url, headers=headers, form_data=data, timeout=10)
+    response, error = try_request("post", url, headers=headers, form_data=data, timeout=15)
     
     if error:
         return {
@@ -69,6 +74,14 @@ def validate_phone_number(phone_number):
         }
     
     if response:
+        if response.status_code != 200:
+            return {
+                'error': f'HTTP Error {response.status_code}',
+                'phone_number': original_phone,
+                'response_text': response.text[:200] if response.text else 'Empty response',
+                'valid': False
+            }
+        
         try:
             json_data = response.json()
             status_code = json_data.get('status_code')
@@ -109,13 +122,14 @@ def validate_phone_number(phone_number):
             
         except Exception as e:
             return {
-                'error': f'Failed to parse response: {str(e)}. Response text: {response.text[:100]}',
+                'error': f'Failed to parse JSON response: {str(e)}',
                 'phone_number': original_phone,
+                'response_preview': response.text[:200] if response.text else 'No response content',
                 'valid': False
             }
     else:
         return {
-            'error': 'No response received',
+            'error': 'No response received from Snapchat',
             'phone_number': original_phone,
             'valid': False
         }
