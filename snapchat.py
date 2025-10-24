@@ -3,32 +3,50 @@ from utils import try_request, get_user_agent, generate_random_token
 def validate_phone_number(phone_number):
     phone_number = str(phone_number).strip()
     
-    if not phone_number.startswith('+'):
+    original_phone = phone_number
+    
+    if phone_number.startswith('+'):
+        phone_number = phone_number[1:]
+    
+    if len(phone_number) < 3:
         return {
-            'error': 'Phone number must be in E.164 format starting with +',
-            'phone_number': phone_number,
+            'error': 'Phone number too short',
+            'phone_number': original_phone,
             'valid': False
         }
     
-    if phone_number.startswith('+1'):
+    if phone_number.startswith('1'):
         country_code = '1'
-        local_number = phone_number[2:]
-    elif phone_number.startswith('+44'):
+        local_number = phone_number[1:]
+    elif phone_number.startswith('44'):
         country_code = '44'
-        local_number = phone_number[3:]
-    elif phone_number.startswith('+49'):
+        local_number = phone_number[2:]
+    elif phone_number.startswith('49'):
         country_code = '49'
-        local_number = phone_number[3:]
+        local_number = phone_number[2:]
+    elif phone_number.startswith('33'):
+        country_code = '33'
+        local_number = phone_number[2:]
+    elif phone_number.startswith('34'):
+        country_code = '34'
+        local_number = phone_number[2:]
+    elif phone_number.startswith('39'):
+        country_code = '39'
+        local_number = phone_number[2:]
+    elif phone_number.startswith('7'):
+        country_code = '7'
+        local_number = phone_number[1:]
     else:
-        country_code = phone_number[1:3]
-        local_number = phone_number[3:]
+        country_code = phone_number[:2]
+        local_number = phone_number[2:]
     
     token = generate_random_token()
     
     headers = {
         'Cookie': f'xsrf_token={token}',
         'User-Agent': get_user_agent(),
-        'Content-Type': 'application/x-www-form-urlencoded'
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
     }
     
     data = {
@@ -44,19 +62,19 @@ def validate_phone_number(phone_number):
     if error:
         return {
             'error': f'Request failed: {error}',
-            'phone_number': phone_number,
+            'phone_number': original_phone,
             'country_code': country_code,
             'local_number': local_number,
             'valid': False
         }
     
-    if response and response.status_code == 200:
+    if response:
         try:
             json_data = response.json()
             status_code = json_data.get('status_code')
             
             result = {
-                'phone_number': phone_number,
+                'phone_number': original_phone,
                 'country_code': country_code,
                 'local_number': local_number,
                 'raw_status': status_code
@@ -91,14 +109,13 @@ def validate_phone_number(phone_number):
             
         except Exception as e:
             return {
-                'error': f'Failed to parse response: {str(e)}',
-                'phone_number': phone_number,
+                'error': f'Failed to parse response: {str(e)}. Response text: {response.text[:100]}',
+                'phone_number': original_phone,
                 'valid': False
             }
     else:
-        status_code = response.status_code if response else 'No response'
         return {
-            'error': f'HTTP {status_code}',
-            'phone_number': phone_number,
+            'error': 'No response received',
+            'phone_number': original_phone,
             'valid': False
         }
