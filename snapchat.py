@@ -1,32 +1,27 @@
-import random
-import string
 from utils import try_request, get_user_agent, generate_random_token
 
 def validate_phone_number(phone_number):
-    phone_number = phone_number.strip()
+    phone_number = str(phone_number).strip()
     
-    if phone_number.startswith(' ') or phone_number.startswith('+'):
-        phone_number = '+' + phone_number.lstrip(' +')
-    
-    if phone_number.startswith('+'):
-        if phone_number.startswith('+1'):
-            country_code = '1'
-            local_number = phone_number[2:]
-        elif phone_number.startswith('+44'):
-            country_code = '44'
-            local_number = phone_number[3:]
-        elif phone_number.startswith('+49'):
-            country_code = '49'
-            local_number = phone_number[3:]
-        else:
-            country_code = phone_number[1:3]
-            local_number = phone_number[3:]
-    else:
+    if not phone_number.startswith('+'):
         return {
             'error': 'Phone number must be in E.164 format starting with +',
             'phone_number': phone_number,
             'valid': False
         }
+    
+    if phone_number.startswith('+1'):
+        country_code = '1'
+        local_number = phone_number[2:]
+    elif phone_number.startswith('+44'):
+        country_code = '44'
+        local_number = phone_number[3:]
+    elif phone_number.startswith('+49'):
+        country_code = '49'
+        local_number = phone_number[3:]
+    else:
+        country_code = phone_number[1:3]
+        local_number = phone_number[3:]
     
     token = generate_random_token()
     
