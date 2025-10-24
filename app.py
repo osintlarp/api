@@ -68,7 +68,9 @@ def roblox_lookup():
         if request.args.get(key, 'true').lower() == 'false':
             options[key] = False
 
-    data = get_user_info(identifier, **options)
+    use_cache = request.args.get('cache', 'true').lower() != 'false'
+
+    data = get_user_info(identifier, use_cache=use_cache, **options)
     
     if isinstance(data, dict) and data.get('error'):
         if data.get('error') == "Rate-Limited by Roblox ? Proxies not responding":
