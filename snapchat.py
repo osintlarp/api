@@ -43,15 +43,23 @@ def validate_phone_number(phone_number):
     token = generate_random_token()
     
     headers = {
-        'Cookie': f'xsrf_token={token}',
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.2 Mobile/15E148 Safari/604.1',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json',
-        'X-XSRF-TOKEN': token,
-        'Origin': 'https://accounts.snapchat.com',
-        'Referer': 'https://accounts.snapchat.com/',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br'
+        "Sec-Ch-Ua": "\" Not A;Brand\";v=\"99\", \"Chromium\";v=\"90\"",
+        "Sec-Ch-Ua-Mobile": "?0",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
+        "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
+        "Accept": "*/*",
+        "Origin": "https://accounts.snapchat.com",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Dest": "empty",
+        "Referer": "https://accounts.snapchat.com/",
+        "Accept-Encoding": "gzip, deflate",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Connection": "close"
+    }
+    
+    cookies = {
+        "xsrf_token": token
     }
     
     data = {
@@ -62,7 +70,7 @@ def validate_phone_number(phone_number):
     
     url = 'https://accounts.snapchat.com/accounts/validate_phone_number'
     
-    response, error = try_request("post", url, headers=headers, form_data=data, timeout=15)
+    response, error = try_request("post", url, headers=headers, cookies=cookies, form_data=data, timeout=15)
     
     if error:
         return {
@@ -124,7 +132,8 @@ def validate_phone_number(phone_number):
             return {
                 'error': f'Failed to parse JSON response: {str(e)}',
                 'phone_number': original_phone,
-                'response_preview': response.text[:200] if response.text else 'No response content',
+                'response_preview': response.text[:500] if response.text else 'No response content',
+                'status_code': response.status_code,
                 'valid': False
             }
     else:
