@@ -3,6 +3,11 @@ import string
 from utils import try_request, get_user_agent, generate_random_token
 
 def validate_phone_number(phone_number):
+    phone_number = phone_number.strip()
+    
+    if phone_number.startswith(' ') or phone_number.startswith('+'):
+        phone_number = '+' + phone_number.lstrip(' +')
+    
     if phone_number.startswith('+'):
         if phone_number.startswith('+1'):
             country_code = '1'
