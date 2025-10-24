@@ -29,8 +29,16 @@ PROXY_INDEX = 0
 _proxy_lock = threading.Lock()
 
 CACHE_DIR = "_CACHE_ROBLOX_OS_"
-CACHE_DURATION_SECONDS = 24 * 60 * 60
+CACHE_DURATION_SECONDS = 6 * 60 * 60
 os.makedirs(CACHE_DIR, exist_ok=True)
+
+ALL_OPTION_KEYS = [
+    'user_id', 'alias', 'display_name', 'description', 'is_banned',
+    'has_verified_badge', 'friends', 'followers', 'following', 'join_date',
+    'previous_usernames', 'groups', 'about_me', 'friends_list',
+    'followers_list', 'following_list', 'presence_status',
+    'last_location', 'current_place_id', 'last_online_timestamp'
+]
 
 def load_proxies():
     global PROXIES
@@ -273,142 +281,122 @@ def get_presence(user_id):
             }
     return None
 
+def _filter_data(full_data, options):
+    filtered_result = {}
+    for key in ALL_OPTION_KEYS:
+        if options.get(key, True):
+            filtered_result[key] = full_data.get(key)
+    return filtered_result
+
 def get_user_info(identifier, use_cache=True, **options):
     cache_username = None
+    full_data = None
     
     if not identifier.isdigit():
         cache_username = identifier
         if use_cache:
             cached_data = read_from_cache(cache_username)
             if cached_data:
-                return cached_data
+                full_data = cached_data
 
-    if identifier.isdigit():
-        user_id = identifier
-    else:
-        user_id = search_by_username(identifier)
-        if isinstance(user_id, dict) and user_id.get('error'):
-            return {'error': user_id['error']}
-            
-    if not user_id:
-        return None
+    if not full_data:
+        if identifier.isdigit():
+            user_id = identifier
+        else:
+            user_id = search_by_username(identifier)
+            if isinstance(user_id, dict) and user_id.get('error'):
+                return {'error': user_id['error']}
+                
+        if not user_id:
+            return None
 
-    headers = {'User-Agent': get_user_agent()}
-    user_url = f"https://users.roblox.com/v1/users/{user_id}"
-    user_resp, rate_limited = try_request("get", user_url, headers=headers)
-    
-    if rate_limited and not user_resp:
-        return {'error': "Rate-Limited by Roblox ? Proxies not responding"}
-    if not user_resp or user_resp.status_code != 200:
-        return None
+        headers = {'User-Agent': get_user_agent()}
+        user_url = f"https://users.roblox.com/v1/users/{user_id}"
+        user_resp, rate_limited = try_request("get", user_url, headers=headers)
         
-    user_data = user_resp.json()
+        if rate_limited and not user_resp:
+            return {'error': "Rate-Limited by Roblox ? Proxies not responding"}
+        if not user_resp or user_resp.status_code != 200:
+            return None
+            
+        user_data = user_resp.json()
 
-    if not cache_username:
-        cache_username = user_data.get('name')
-        if use_cache and cache_username:
-            cached_data = read_from_cache(cache_username)
-            if cached_data:
-                return cached_data
+        if not cache_username:
+            cache_username = user_data.get('name')
+            if use_cache and cache_username:
+                cached_data = read_from_cache(cache_username)
+                if cached_data:
+                    full_data = cached_data
 
-    result = {}
+    if not full_data:
+        full_data = {}
+        full_data['user_id'] = user_id
+        full_data['alias'] = user_data.get('name')
+        full_data['display_name'] = user_data.get('displayName')
+        full_data['description'] = user_data.get('description', '')
+        full_data['is_banned'] = user_data.get('isBanned', False)
+        full_data['has_verified_badge'] = user_data.get('hasVerifiedBadge', False)
+        full_data['join_date'] = user_data.get('created')
 
-    if options.get('user_id', True):
-        result['user_id'] = user_id
-    if options.get('alias', True):
-        result['alias'] = user_data.get('name')
-    if options.get('display_name', True):
-        result['display_name'] = user_data.get('displayName')
-    if options.get('description', True):
-        result['description'] = user_data.get('description', '')
-    if options.get('is_banned', True):
-        result['is_banned'] = user_data.get('isBanned', False)
-    if options.get('has_verified_badge', True):
-        result['has_verified_badge'] = user_data.get('hasVerifiedBadge', False)
-    if options.get('join_date', True):
-        result['join_date'] = user_data.get('created')
-
-    def cnt(url):
-        r, rl = try_request("get", url, headers=headers)
-        if rl and not r:
+        def cnt(url):
+            r, rl = try_request("get", url, headers=headers)
+            if rl and not r:
+                return 0
+            if r and r.status_code == 200:
+                return r.json().get('count', 0)
             return 0
-        if r and r.status_code == 200:
-            return r.json().get('count', 0)
-        return 0
 
-    if options.get('friends', True):
-        result['friends'] = cnt(f"https://friends.roblox.com/v1/users/{user_id}/friends/count")
-    if options.get('followers', True):
-        result['followers'] = cnt(f"https://friends.roblox.com/v1/users/{user_id}/followers/count")
-    if options.get('following', True):
-        result['following'] = cnt(f"https://friends.roblox.com/v1/users/{user_id}/followings/count")
-
-    fetch_presence_data = any(options.get(k, True) for k in [
-        'presence_status', 'last_location', 'current_place_id', 'last_online_timestamp'
-    ])
-    
-    presence_info = None
-    if fetch_presence_data:
+        full_data['friends'] = cnt(f"https://friends.roblox.com/v1/users/{user_id}/friends/count")
+        full_data['followers'] = cnt(f"https://friends.roblox.com/v1/users/{user_id}/followers/count")
+        full_data['following'] = cnt(f"https://friends.roblox.com/v1/users/{user_id}/followings/count")
+        
         presence_info = get_presence(user_id)
         if isinstance(presence_info, dict) and presence_info.get('error'):
             presence_info = None 
 
-    if presence_info:
-        if options.get('presence_status', True):
-            result['presence_status'] = presence_info.get('status', 'N/A')
-        if options.get('last_location', True):
-            result['last_location'] = presence_info.get('last_location', 'N/A')
-        if options.get('current_place_id', True):
-            result['current_place_id'] = presence_info.get('place_id')
-        if options.get('last_online_timestamp', True):
-            result['last_online_timestamp'] = presence_info.get('last_online')
-    elif fetch_presence_data:
-        if options.get('presence_status', True):
-            result['presence_status'] = 'Error fetching presence'
-        if options.get('last_location', True):
-            result['last_location'] = 'N/A'
-        if options.get('current_place_id', True):
-            result['current_place_id'] = None
-        if options.get('last_online_timestamp', True):
-            result['last_online_timestamp'] = 'N/A'
-    
-    if options.get('previous_usernames', True):
+        if presence_info:
+            full_data['presence_status'] = presence_info.get('status', 'N/A')
+            full_data['last_location'] = presence_info.get('last_location', 'N/A')
+            full_data['current_place_id'] = presence_info.get('place_id')
+            full_data['last_online_timestamp'] = presence_info.get('last_online')
+        else:
+            full_data['presence_status'] = 'Error fetching presence'
+            full_data['last_location'] = 'N/A'
+            full_data['current_place_id'] = None
+            full_data['last_online_timestamp'] = 'N/A'
+        
         previous_usernames = get_previous_usernames(user_id)
         if isinstance(previous_usernames, dict) and previous_usernames.get('error'):
             previous_usernames = [] 
-        result['previous_usernames'] = previous_usernames
+        full_data['previous_usernames'] = previous_usernames
 
-    if options.get('groups', True):
         groups = get_groups(user_id)
         if isinstance(groups, dict) and groups.get('error'):
             groups = [] 
-        result['groups'] = groups
+        full_data['groups'] = groups
 
-    if options.get('about_me', True):
         about_me = get_about_me(user_id)
         if isinstance(about_me, dict) and about_me.get('error'):
             about_me = "Not available" 
-        result['about_me'] = about_me
+        full_data['about_me'] = about_me
 
-    if options.get('friends_list', True):
         friends = get_entity_list(user_id, "friends")
         if isinstance(friends, dict) and friends.get('error'):
             friends = [] 
-        result['friends_list'] = friends
+        full_data['friends_list'] = friends
 
-    if options.get('followers_list', True):
         followers = get_entity_list(user_id, "followers")
         if isinstance(followers, dict) and followers.get('error'):
             followers = [] 
-        result['followers_list'] = followers
+        full_data['followers_list'] = followers
 
-    if options.get('following_list', True):
         followings = get_entity_list(user_id, "followings")
         if isinstance(followings, dict) and followings.get('error'):
             followings = [] 
-        result['following_list'] = followings
-    
-    if cache_username:
-        write_to_cache(cache_username, result)
+        full_data['following_list'] = followings
         
-    return result
+        if cache_username and use_cache:
+            write_to_cache(cache_username, full_data)
+            
+    return _filter_data(full_data, options)
+
