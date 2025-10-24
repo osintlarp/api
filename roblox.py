@@ -230,53 +230,61 @@ def get_user_info(identifier):
         user_id = search_by_username(identifier)
         if isinstance(user_id, dict) and user_id.get('error'):
             return {'error': user_id['error']}
+            
     if not user_id:
         return None
+
     headers = {'User-Agent': get_user_agent()}
     user_url = f"https://users.roblox.com/v1/users/{user_id}"
     user_resp, rate_limited = try_request("get", user_url, headers=headers)
+    
     if rate_limited and not user_resp:
         return {'error': "Rate-Limited by Roblox ? Proxies not responding"}
     if not user_resp or user_resp.status_code != 200:
         return None
+        
     user_data = user_resp.json()
+
     def cnt(url):
         r, rl = try_request("get", url, headers=headers)
         if rl and not r:
-            return {'error': "Rate-Limited by Roblox ? Proxies not responding"}
+            return 0
         if r and r.status_code == 200:
             return r.json().get('count', 0)
         return 0
+
     friends_count = cnt(f"https://friends.roblox.com/v1/users/{user_id}/friends/count")
-    if isinstance(friends_count, dict) and friends_count.get('error'):
-        return friends_count
     followers_count = cnt(f"https://friends.roblox.com/v1/users/{user_id}/followers/count")
-    if isinstance(followers_count, dict) and followers_count.get('error'):
-        return followers_count
     followings_count = cnt(f"https://friends.roblox.com/v1/users/{user_id}/followings/count")
-    if isinstance(followings_count, dict) and followings_count.get('error'):
-        return followings_count
+
     presence_info = get_presence(user_id)
     if isinstance(presence_info, dict) and presence_info.get('error'):
-        return presence_info
+        presence_info = None
+
     previous_usernames = get_previous_usernames(user_id)
     if isinstance(previous_usernames, dict) and previous_usernames.get('error'):
-        return previous_usernames
+        previous_usernames = []
+
     groups = get_groups(user_id)
     if isinstance(groups, dict) and groups.get('error'):
-        return groups
+        groups = []
+
     about_me = get_about_me(user_id)
     if isinstance(about_me, dict) and about_me.get('error'):
-        return about_me
+        about_me = "Not available"
+
     friends = get_entity_list(user_id, "friends")
     if isinstance(friends, dict) and friends.get('error'):
-        return friends
+        friends = []
+
     followers = get_entity_list(user_id, "followers")
     if isinstance(followers, dict) and followers.get('error'):
-        return followers
+        followers = []
+
     followings = get_entity_list(user_id, "followings")
     if isinstance(followings, dict) and followings.get('error'):
-        return followings
+        followings = []
+
     result = {
         'user_id': user_id,
         'alias': user_data.get('name'),
@@ -295,6 +303,7 @@ def get_user_info(identifier):
         'followers_list': followers,
         'following_list': followings
     }
+    
     if presence_info:
         result.update({
             'presence_status': presence_info.get('status', 'N/A'),
@@ -309,4 +318,5 @@ def get_user_info(identifier):
             'current_place_id': None,
             'last_online_timestamp': 'N/A'
         })
+        
     return result
