@@ -54,7 +54,22 @@ def roblox_lookup():
     identifier = request.args.get('username') or request.args.get('id')
     if not identifier:
         return jsonify({'error': 'Missing ?username= or ?id='}), 400
-    data = get_user_info(identifier)
+
+    option_keys = [
+        'user_id', 'alias', 'display_name', 'description', 'is_banned',
+        'has_verified_badge', 'friends', 'followers', 'following', 'join_date',
+        'previous_usernames', 'groups', 'about_me', 'friends_list',
+        'followers_list', 'following_list', 'presence_status',
+        'last_location', 'current_place_id', 'last_online_timestamp'
+    ]
+
+    options = {}
+    for key in option_keys:
+        if request.args.get(key, 'true').lower() == 'false':
+            options[key] = False
+
+    data = get_user_info(identifier, **options)
+    
     if isinstance(data, dict) and data.get('error'):
         if data.get('error') == "Rate-Limited by Roblox ? Proxies not responding":
             return jsonify({'error': data.get('error')}), 429
