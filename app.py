@@ -30,23 +30,6 @@ def get_roblox_osint():
         print(f"Error in roblox endpoint: {e}")
         return jsonify({'error': 'An internal server error occurred'}), 500
 
-@app.route('/v1/osint/instagram')
-def get_instagram_osint():
-    username = request.args.get('username')
-    if not username:
-        return jsonify({'error': 'Missing "username" query parameter'}), 400
-        
-    try:
-        info = instagram.get_instagram_info(username)
-        if info.get('error'):
-            if 'User not found' in info.get('error'):
-                 return jsonify(info), 404
-            return jsonify(info), 500
-            
-        return jsonify(info)
-    except Exception as e:
-        print(f"Error in instagram endpoint: {e}")
-        return jsonify({'error': 'An internal server error occurred'}), 500
 
 if __name__ == '__main__':
     utils.load_proxies()
