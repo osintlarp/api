@@ -1,14 +1,9 @@
-from flask import Flask, jsonify, request
 from bs4 import BeautifulSoup
-import requests
-import random
 import time
-import threading
 import os
 import json
 from datetime import datetime, timezone
-
-app = Flask(__name__)
+from utils import try_request, get_user_agent
 
 USER_PRESENCE_MAP = {
     0: "Offline",
@@ -33,17 +28,6 @@ ROBLOX_BADGE_TABLE = {
     18: "Welcome To The Club"
 }
 
-RATE_LIMIT_COUNT = 10
-RATE_LIMIT_WINDOW_SECONDS = 30 * 60
-
-_requests_store = {}
-_store_lock = threading.Lock()
-
-PROXIES_FILE = "proxies.txt"
-PROXIES = []
-PROXY_INDEX = 0
-_proxy_lock = threading.Lock()
-
 CACHE_DIR = "_CACHE_ROBLOX_OS_"
 CACHE_DURATION_SECONDS = 6 * 60 * 60
 os.makedirs(CACHE_DIR, exist_ok=True)
@@ -55,16 +39,6 @@ ALL_OPTION_KEYS = [
     'friends_list', 'followers_list', 'following_list', 'presence_status',
     'last_location', 'current_place_id', 'last_online_timestamp'
 ]
-
-def load_proxies():
-    global PROXIES
-    if os.path.exists(PROXIES_FILE):
-        with open(PROXIES_FILE, "r", encoding="utf-8") as f:
-            PROXIES = [l.strip() for l in f if l.strip()]
-    else:
-        PROXIES = []
-
-load_proxies()
 
 def sanitize_filename(filename):
     if not filename:
@@ -108,80 +82,12 @@ def write_to_cache(username, info):
     except Exception as e:
         print(f"Failed to write to cache file {filepath}: {e}")
 
-def get_next_proxy():
-    global PROXY_INDEX
-    with _proxy_lock:
-        if not PROXIES:
-            return None
-        proxy = PROXIES[PROXY_INDEX % len(PROXIES)]
-        PROXY_INDEX += 1
-        return proxy
-
-def get_user_agent():
-    user_agents = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.85 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15",
-        "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0"
-    ]
-    return random.choice(user_agents)
-
-def try_request(method, url, headers=None, json_payload=None, params=None, max_retries=3, timeout=15):
-    headers = headers or {}
-    retries = 0
-    initial_rate_limited = False
-    while retries < max_retries:
-        try:
-            if method.lower() == "get":
-                r = requests.get(url, headers=headers, params=params, timeout=timeout)
-            elif method.lower() == "post":
-                r = requests.post(url, headers=headers, json=json_payload, timeout=timeout)
-            else:
-                return None, False
-        except requests.RequestException:
-            retries += 1
-            time.sleep(1)
-            continue
-        if r.status_code == 200:
-            return r, False
-        if r.status_code == 429:
-            initial_rate_limited = True
-            break
-        retries += 1
-        time.sleep(1)
-    if initial_rate_limited:
-        if not PROXIES:
-            return None, True
-        for _ in range(len(PROXIES)):
-            proxy = get_next_proxy()
-            if not proxy:
-                break
-            proxy_url = f"http://{proxy}"
-            proxies = {"http": proxy_url, "https": proxy_url}
-            try:
-                if method.lower() == "get":
-                    r = requests.get(url, headers=headers, params=params, proxies=proxies, timeout=timeout)
-                else:
-                    r = requests.post(url, headers=headers, json=json_payload, proxies=proxies, timeout=timeout)
-                if r.status_code == 200:
-                    return r, False
-                if r.status_code == 429:
-                    time.sleep(1)
-                    continue
-                time.sleep(0.5)
-                continue
-            except requests.RequestException:
-                time.sleep(0.5)
-                continue
-        return None, True
-    return None, False
-
 def search_by_username(username):
     url = f"https://users.roblox.com/v1/users/search?keyword={username}&limit=10"
     headers = {'User-Agent': get_user_agent()}
-    r, rate_limited = try_request("get", url, headers=headers)
-    if rate_limited and not r:
-        return {"error": "Rate-Limited by Roblox ? Proxies not responding"}
+    r, err = try_request("get", url, headers=headers)
+    if err:
+        return {"error": err}
     if r and r.status_code == 200:
         data = r.json()
         if data.get('data'):
@@ -193,9 +99,9 @@ def search_by_username(username):
     try:
         url = f"https://www.roblox.com/users/profile?username={username}"
         headers = {'User-Agent': get_user_agent()}
-        r, rate_limited = try_request("get", url, headers=headers)
-        if rate_limited and not r:
-            return {"error": "Rate-Limited by Roblox ? Proxies not responding"}
+        r, err = try_request("get", url, headers=headers)
+        if err:
+            return {"error": err}
         if r and r.status_code == 200 and 'users' in r.url:
             parts = r.url.split('/')
             for i, part in enumerate(parts):
@@ -208,11 +114,11 @@ def search_by_username(username):
     return None
 
 def get_previous_usernames(user_id):
-    url = f"httpsD://users.roblox.com/v1/users/{user_id}/username-history?limit=100&sortOrder=Asc"
+    url = f"https://users.roblox.com/v1/users/{user_id}/username-history?limit=100&sortOrder=Asc"
     headers = {'User-Agent': get_user_agent()}
-    r, rate_limited = try_request("get", url, headers=headers)
-    if rate_limited and not r:
-        return {"error": "Rate-Limited by Roblox ? Proxies not responding"}
+    r, err = try_request("get", url, headers=headers)
+    if err:
+        return {"error": err}
     if r and r.status_code == 200:
         data = r.json()
         return [entry['name'] for entry in data.get('data', [])]
@@ -221,9 +127,9 @@ def get_previous_usernames(user_id):
 def get_groups(user_id):
     url = f"https://groups.roblox.com/v2/users/{user_id}/groups/roles"
     headers = {'User-Agent': get_user_agent()}
-    r, rate_limited = try_request("get", url, headers=headers)
-    if rate_limited and not r:
-        return {"error": "Rate-Limited by Roblox ? Proxies not responding"}
+    r, err = try_request("get", url, headers=headers)
+    if err:
+        return {"error": err}
     groups = []
     if r and r.status_code == 200:
         data = r.json()
@@ -239,9 +145,9 @@ def get_groups(user_id):
 def get_about_me(user_id):
     url = f"https://www.roblox.com/users/{user_id}/profile"
     headers = {'User-Agent': get_user_agent()}
-    r, rate_limited = try_request("get", url, headers=headers)
-    if rate_limited and not r:
-        return {"error": "Rate-Limited by Roblox ? Proxies not responding"}
+    r, err = try_request("get", url, headers=headers)
+    if err:
+        return {"error": err}
     if r and r.status_code == 200:
         soup = BeautifulSoup(r.text, 'html.parser')
         about_me = soup.find('span', class_='profile-about-content-text linkify')
@@ -260,9 +166,9 @@ def get_entity_list(user_id, entity_type):
     headers = {'User-Agent': get_user_agent()}
     while True:
         url = f"https://friends.roblox.com/v1/users/{user_id}/{entity_type}?limit=100&cursor={cursor}"
-        r, rate_limited = try_request("get", url, headers=headers)
-        if rate_limited and not r:
-            return {"error": "Rate-Limited by Roblox ? Proxies not responding"}
+        r, err = try_request("get", url, headers=headers)
+        if err:
+            return {"error": err}
         if not r or r.status_code != 200:
             break
         data = r.json()
@@ -281,9 +187,9 @@ def get_presence(user_id):
     url = "https://presence.roblox.com/v1/presence/users"
     headers = {'User-Agent': get_user_agent()}
     payload = {"userIds": [int(user_id)]}
-    r, rate_limited = try_request("post", url, headers=headers, json_payload=payload)
-    if rate_limited and not r:
-        return {"error": "Rate-Limited by Roblox ? Proxies not responding"}
+    r, err = try_request("post", url, headers=headers, json_payload=payload)
+    if err:
+        return {"error": err}
     if r and r.status_code == 200:
         data = r.json()
         if data.get("userPresences"):
@@ -300,10 +206,10 @@ def get_presence(user_id):
 def get_roblox_badges(user_id):
     url = f"https://accountinformation.roblox.com/v1/users/{user_id}/roblox-badges"
     headers = {'User-Agent': get_user_agent()}
-    r, rate_limited = try_request("get", url, headers=headers)
+    r, err = try_request("get", url, headers=headers)
     
-    if rate_limited and not r:
-        return {"error": "Rate-Limited by Roblox ? Proxies not responding"}
+    if err:
+        return {"error": err}
         
     if r and r.status_code == 200:
         try:
@@ -341,16 +247,16 @@ def get_user_info(identifier, use_cache=True, **options):
                 return {'error': user_id['error']}
                 
         if not user_id:
-            return None
+            return {'error': 'User not found'}
 
         headers = {'User-Agent': get_user_agent()}
         user_url = f"https://users.roblox.com/v1/users/{user_id}"
-        user_resp, rate_limited = try_request("get", user_url, headers=headers)
+        user_resp, err = try_request("get", user_url, headers=headers)
         
-        if rate_limited and not user_resp:
-            return {'error': "Rate-Limited by Roblox ? Proxies not responding"}
+        if err:
+            return {'error': err}
         if not user_resp or user_resp.status_code != 200:
-            return None
+            return {'error': 'Failed to fetch user data'}
             
         user_data = user_resp.json()
 
@@ -406,7 +312,7 @@ def get_user_info(identifier, use_cache=True, **options):
 
         def cnt(url):
             r, rl = try_request("get", url, headers=headers)
-            if rl and not r:
+            if rl:
                 return 0
             if r and r.status_code == 200:
                 return r.json().get('count', 0)
@@ -471,4 +377,3 @@ def get_user_info(identifier, use_cache=True, **options):
             write_to_cache(cache_username, full_data)
             
     return _filter_data(full_data, options)
-
