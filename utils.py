@@ -41,7 +41,7 @@ def get_user_agent():
 def generate_random_token(length=22):
     return ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(length)])
 
-def try_request(method, url, headers=None, json_payload=None, form_data=None, params=None, max_retries=3, timeout=15):
+def try_request(method, url, headers=None, json_payload=None, form_data=None, cookies=None, params=None, max_retries=3, timeout=15):
     if headers is None:
         headers = {'User-Agent': get_user_agent()}
     
@@ -49,12 +49,12 @@ def try_request(method, url, headers=None, json_payload=None, form_data=None, pa
     while retries < max_retries:
         try:
             if method.lower() == "get":
-                r = requests.get(url, headers=headers, params=params, timeout=timeout, allow_redirects=True)
+                r = requests.get(url, headers=headers, cookies=cookies, params=params, timeout=timeout, allow_redirects=True)
             elif method.lower() == "post":
                 if json_payload is not None:
-                    r = requests.post(url, headers=headers, json=json_payload, timeout=timeout, allow_redirects=True)
+                    r = requests.post(url, headers=headers, cookies=cookies, json=json_payload, timeout=timeout, allow_redirects=True)
                 elif form_data is not None:
-                    r = requests.post(url, headers=headers, data=form_data, timeout=timeout, allow_redirects=True)
+                    r = requests.post(url, headers=headers, cookies=cookies, data=form_data, timeout=timeout, allow_redirects=True)
                 else:
                     return None, "No payload provided for POST request"
             else:
@@ -86,12 +86,12 @@ def try_request(method, url, headers=None, json_payload=None, form_data=None, pa
         
         try:
             if method.lower() == "get":
-                r = requests.get(url, headers=headers, params=params, proxies=proxies, timeout=timeout, allow_redirects=True)
+                r = requests.get(url, headers=headers, cookies=cookies, params=params, proxies=proxies, timeout=timeout, allow_redirects=True)
             elif method.lower() == "post":
                 if json_payload is not None:
-                    r = requests.post(url, headers=headers, json=json_payload, proxies=proxies, timeout=timeout, allow_redirects=True)
+                    r = requests.post(url, headers=headers, cookies=cookies, json=json_payload, proxies=proxies, timeout=timeout, allow_redirects=True)
                 elif form_data is not None:
-                    r = requests.post(url, headers=headers, data=form_data, proxies=proxies, timeout=timeout, allow_redirects=True)
+                    r = requests.post(url, headers=headers, cookies=cookies, data=form_data, proxies=proxies, timeout=timeout, allow_redirects=True)
                 
             if r.status_code == 200:
                 print("Request successful with proxy.")
