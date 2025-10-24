@@ -3,6 +3,7 @@ import random
 import time
 import threading
 import os
+import string
 
 PROXIES_FILE = "proxies.txt"
 PROXIES = []
@@ -37,7 +38,10 @@ def get_user_agent():
     ]
     return random.choice(user_agents)
 
-def try_request(method, url, headers=None, json_payload=None, params=None, max_retries=5, timeout=10):
+def generate_random_token(length=22):
+    return ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(length)])
+
+def try_request(method, url, headers=None, json_payload=None, form_data=None, params=None, max_retries=5, timeout=10):
     if headers is None:
         headers = {'User-Agent': get_user_agent()}
     
@@ -47,7 +51,12 @@ def try_request(method, url, headers=None, json_payload=None, params=None, max_r
             if method.lower() == "get":
                 r = requests.get(url, headers=headers, params=params, timeout=timeout)
             elif method.lower() == "post":
-                r = requests.post(url, headers=headers, json=json_payload, timeout=timeout)
+                if json_payload is not None:
+                    r = requests.post(url, headers=headers, json=json_payload, timeout=timeout)
+                elif form_data is not None:
+                    r = requests.post(url, headers=headers, data=form_data, timeout=timeout)
+                else:
+                    return None, "No payload provided for POST request"
             else:
                 return None, "Unsupported method"
             
@@ -81,8 +90,13 @@ def try_request(method, url, headers=None, json_payload=None, params=None, max_r
         try:
             if method.lower() == "get":
                 r = requests.get(url, headers=headers, params=params, proxies=proxies, timeout=timeout)
-            else:
-                r = requests.post(url, headers=headers, json=json_payload, proxies=proxies, timeout=timeout)
+            elif method.lower() == "post":
+                if json_payload is not None:
+                    r = requests.post(url, headers=headers, json=json_payload, proxies=proxies, timeout=timeout)
+                elif form_data is not None:
+                    r = requests.post(url, headers=headers, data=form_data, proxies=proxies, timeout=timeout)
+                else:
+                    return None, "No payload provided for POST request"
                 
             if r.status_code == 200:
                 print("Request successful with proxy.")
