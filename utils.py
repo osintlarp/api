@@ -41,7 +41,7 @@ def get_user_agent():
 def generate_random_token(length=22):
     return ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(length)])
 
-def try_request(method, url, headers=None, json_payload=None, form_data=None, params=None, max_retries=5, timeout=10):
+def try_request(method, url, headers=None, json_payload=None, form_data=None, params=None, max_retries=3, timeout=15):
     if headers is None:
         headers = {'User-Agent': get_user_agent()}
     
@@ -49,12 +49,12 @@ def try_request(method, url, headers=None, json_payload=None, form_data=None, pa
     while retries < max_retries:
         try:
             if method.lower() == "get":
-                r = requests.get(url, headers=headers, params=params, timeout=timeout)
+                r = requests.get(url, headers=headers, params=params, timeout=timeout, allow_redirects=True)
             elif method.lower() == "post":
                 if json_payload is not None:
-                    r = requests.post(url, headers=headers, json=json_payload, timeout=timeout)
+                    r = requests.post(url, headers=headers, json=json_payload, timeout=timeout, allow_redirects=True)
                 elif form_data is not None:
-                    r = requests.post(url, headers=headers, data=form_data, timeout=timeout)
+                    r = requests.post(url, headers=headers, data=form_data, timeout=timeout, allow_redirects=True)
                 else:
                     return None, "No payload provided for POST request"
             else:
@@ -62,22 +62,19 @@ def try_request(method, url, headers=None, json_payload=None, form_data=None, pa
             
             if r.status_code == 200:
                 return r, None
-            if r.status_code == 429:
-                print("Rate limited, trying proxy...")
-                break 
             
             print(f"Request failed (Status {r.status_code}), retrying...")
             retries += 1
-            time.sleep(1)
+            time.sleep(2)
             
         except requests.RequestException as e:
             print(f"Request exception: {e}, retrying...")
             retries += 1
-            time.sleep(1)
+            time.sleep(2)
             continue
 
     if not PROXIES:
-        return None, "Rate-limited and no proxies available"
+        return None, f"All retries failed. Last status: {r.status_code if 'r' in locals() else 'No response'}"
 
     for i in range(len(PROXIES)):
         proxy = get_next_proxy()
@@ -89,24 +86,19 @@ def try_request(method, url, headers=None, json_payload=None, form_data=None, pa
         
         try:
             if method.lower() == "get":
-                r = requests.get(url, headers=headers, params=params, proxies=proxies, timeout=timeout)
+                r = requests.get(url, headers=headers, params=params, proxies=proxies, timeout=timeout, allow_redirects=True)
             elif method.lower() == "post":
                 if json_payload is not None:
-                    r = requests.post(url, headers=headers, json=json_payload, proxies=proxies, timeout=timeout)
+                    r = requests.post(url, headers=headers, json=json_payload, proxies=proxies, timeout=timeout, allow_redirects=True)
                 elif form_data is not None:
-                    r = requests.post(url, headers=headers, data=form_data, proxies=proxies, timeout=timeout)
-                else:
-                    return None, "No payload provided for POST request"
+                    r = requests.post(url, headers=headers, data=form_data, proxies=proxies, timeout=timeout, allow_redirects=True)
                 
             if r.status_code == 200:
                 print("Request successful with proxy.")
                 return r, None
-            if r.status_code == 429:
-                print(f"Proxy {proxy} is also rate-limited.")
-                continue
                 
         except requests.RequestException as e:
             print(f"Proxy {proxy} failed: {e}")
             continue
             
-    return None, "All proxies failed or were rate-limited"
+    return None, "All proxies failed"
