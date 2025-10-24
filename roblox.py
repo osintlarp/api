@@ -5,6 +5,7 @@ import random
 import time
 import threading
 import os
+import json
 
 app = Flask(__name__)
 
@@ -27,6 +28,10 @@ PROXIES = []
 PROXY_INDEX = 0
 _proxy_lock = threading.Lock()
 
+CACHE_DIR = "_CACHE_ROBLOX_OS_"
+CACHE_DURATION_SECONDS = 24 * 60 * 60
+os.makedirs(CACHE_DIR, exist_ok=True)
+
 def load_proxies():
     global PROXIES
     if os.path.exists(PROXIES_FILE):
@@ -36,6 +41,48 @@ def load_proxies():
         PROXIES = []
 
 load_proxies()
+
+def sanitize_filename(filename):
+    if not filename:
+        return None
+    return "".join(c for c in filename if c.isalnum() or c in ('_', '-')).rstrip()
+
+def read_from_cache(username):
+    filename = sanitize_filename(username)
+    if not filename:
+        return None
+        
+    filepath = os.path.join(CACHE_DIR, f"{filename}.json")
+    
+    if not os.path.exists(filepath):
+        return None
+        
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        if time.time() - data.get('timestamp', 0) < CACHE_DURATION_SECONDS:
+            return data.get('info')
+    except Exception as e:
+        print(f"Error reading from cache file {filepath}: {e}")
+        return None
+    
+    return None
+
+def write_to_cache(username, info):
+    filename = sanitize_filename(username)
+    if not filename:
+        print("Failed to write to cache: Invalid username for filename.")
+        return
+        
+    filepath = os.path.join(CACHE_DIR, f"{filename}.json")
+    data = {'timestamp': time.time(), 'info': info}
+    
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"Failed to write to cache file {filepath}: {e}")
 
 def get_next_proxy():
     global PROXY_INDEX
@@ -115,6 +162,9 @@ def search_by_username(username):
         data = r.json()
         if data.get('data'):
             first = data['data'][0]
+            for item in data.get('data'):
+                if item.get('name', '').lower() == username.lower():
+                    return item.get('id') or item.get('userId')
             return first.get('id') or first.get('userId')
     try:
         url = f"https://www.roblox.com/users/profile?username={username}"
@@ -223,7 +273,16 @@ def get_presence(user_id):
             }
     return None
 
-def get_user_info(identifier, **options):
+def get_user_info(identifier, use_cache=True, **options):
+    cache_username = None
+    
+    if not identifier.isdigit():
+        cache_username = identifier
+        if use_cache:
+            cached_data = read_from_cache(cache_username)
+            if cached_data:
+                return cached_data
+
     if identifier.isdigit():
         user_id = identifier
     else:
@@ -244,6 +303,13 @@ def get_user_info(identifier, **options):
         return None
         
     user_data = user_resp.json()
+
+    if not cache_username:
+        cache_username = user_data.get('name')
+        if use_cache and cache_username:
+            cached_data = read_from_cache(cache_username)
+            if cached_data:
+                return cached_data
 
     result = {}
 
@@ -285,7 +351,7 @@ def get_user_info(identifier, **options):
     if fetch_presence_data:
         presence_info = get_presence(user_id)
         if isinstance(presence_info, dict) and presence_info.get('error'):
-            presence_info = None
+            presence_info = None 
 
     if presence_info:
         if options.get('presence_status', True):
@@ -309,37 +375,40 @@ def get_user_info(identifier, **options):
     if options.get('previous_usernames', True):
         previous_usernames = get_previous_usernames(user_id)
         if isinstance(previous_usernames, dict) and previous_usernames.get('error'):
-            previous_usernames = []
+            previous_usernames = [] 
         result['previous_usernames'] = previous_usernames
 
     if options.get('groups', True):
         groups = get_groups(user_id)
         if isinstance(groups, dict) and groups.get('error'):
-            groups = []
+            groups = [] 
         result['groups'] = groups
 
     if options.get('about_me', True):
         about_me = get_about_me(user_id)
         if isinstance(about_me, dict) and about_me.get('error'):
-            about_me = "Not available"
+            about_me = "Not available" 
         result['about_me'] = about_me
 
     if options.get('friends_list', True):
         friends = get_entity_list(user_id, "friends")
         if isinstance(friends, dict) and friends.get('error'):
-            friends = []
+            friends = [] 
         result['friends_list'] = friends
 
     if options.get('followers_list', True):
         followers = get_entity_list(user_id, "followers")
         if isinstance(followers, dict) and followers.get('error'):
-            followers = []
+            followers = [] 
         result['followers_list'] = followers
 
     if options.get('following_list', True):
         followings = get_entity_list(user_id, "followings")
         if isinstance(followings, dict) and followings.get('error'):
-            followings = []
+            followings = [] 
         result['following_list'] = followings
+    
+    if cache_username:
+        write_to_cache(cache_username, result)
         
     return result
