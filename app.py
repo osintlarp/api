@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request, abort
 import roblox
-import instagram
+import snapchat
 import utils
 
 app = Flask(__name__)
@@ -30,8 +30,19 @@ def get_roblox_osint():
         print(f"Error in roblox endpoint: {e}")
         return jsonify({'error': 'An internal server error occurred'}), 500
 
+@app.route('/v1/osint/snapchat/validate_number')
+def validate_snapchat_number():
+    phone_number = request.args.get('phonenumber')
+    if not phone_number:
+        return jsonify({'error': 'Missing "phonenumber" query parameter'}), 400
+    
+    try:
+        result = snapchat.validate_phone_number(phone_number)
+        return jsonify(result)
+    except Exception as e:
+        print(f"Error in Snapchat number validation: {e}")
+        return jsonify({'error': 'An internal server error occurred'}), 500
 
 if __name__ == '__main__':
     utils.load_proxies()
     app.run(debug=True, port=5000)
-
