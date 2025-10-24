@@ -6,6 +6,7 @@ import time
 import threading
 import os
 import json
+from datetime import datetime, timezone
 
 app = Flask(__name__)
 
@@ -15,6 +16,21 @@ USER_PRESENCE_MAP = {
     2: "In-Game",
     3: "In-Studio",
     4: "Invisible"
+}
+
+ROBLOX_BADGE_TABLE = {
+    1: "Administrator",
+    2: "Friendship",
+    3: "Combat Initiation",
+    4: "Warrior",
+    5: "Bloxxer",
+    6: "Homestead",
+    7: "Bricksmith",
+    8: "Inviter",
+    12: "Veteran",
+    14: "Ambassador",
+    17: "Official Model Maker",
+    18: "Welcome To The Club"
 }
 
 RATE_LIMIT_COUNT = 10
@@ -35,8 +51,8 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 ALL_OPTION_KEYS = [
     'user_id', 'alias', 'display_name', 'description', 'is_banned',
     'has_verified_badge', 'friends', 'followers', 'following', 'join_date',
-    'previous_usernames', 'groups', 'about_me', 'friends_list',
-    'followers_list', 'following_list', 'presence_status',
+    'account_age', 'roblox_badges', 'previous_usernames', 'groups', 'about_me', 
+    'friends_list', 'followers_list', 'following_list', 'presence_status',
     'last_location', 'current_place_id', 'last_online_timestamp'
 ]
 
@@ -192,7 +208,7 @@ def search_by_username(username):
     return None
 
 def get_previous_usernames(user_id):
-    url = f"https://users.roblox.com/v1/users/{user_id}/username-history?limit=100&sortOrder=Asc"
+    url = f"httpsD://users.roblox.com/v1/users/{user_id}/username-history?limit=100&sortOrder=Asc"
     headers = {'User-Agent': get_user_agent()}
     r, rate_limited = try_request("get", url, headers=headers)
     if rate_limited and not r:
@@ -281,6 +297,23 @@ def get_presence(user_id):
             }
     return None
 
+def get_roblox_badges(user_id):
+    url = f"https://accountinformation.roblox.com/v1/users/{user_id}/roblox-badges"
+    headers = {'User-Agent': get_user_agent()}
+    r, rate_limited = try_request("get", url, headers=headers)
+    
+    if rate_limited and not r:
+        return {"error": "Rate-Limited by Roblox ? Proxies not responding"}
+        
+    if r and r.status_code == 200:
+        try:
+            data = r.json()
+            return [badge['id'] for badge in data]
+        except Exception as e:
+            print(f"Error parsing badges JSON for {user_id}: {e}")
+            return []
+    return []
+
 def _filter_data(full_data, options):
     filtered_result = {}
     for key in ALL_OPTION_KEYS:
@@ -330,6 +363,7 @@ def get_user_info(identifier, use_cache=True, **options):
 
     if not full_data:
         full_data = {}
+        user_id = user_data.get('id') or user_id
         full_data['user_id'] = user_id
         full_data['alias'] = user_data.get('name')
         full_data['display_name'] = user_data.get('displayName')
@@ -337,6 +371,38 @@ def get_user_info(identifier, use_cache=True, **options):
         full_data['is_banned'] = user_data.get('isBanned', False)
         full_data['has_verified_badge'] = user_data.get('hasVerifiedBadge', False)
         full_data['join_date'] = user_data.get('created')
+        
+        full_data['account_age'] = "N/A"
+        join_date_str = user_data.get('created')
+        if join_date_str:
+            try:
+                if join_date_str.endswith('Z'):
+                    join_date_str_iso = join_date_str[:-1] + '+00:00'
+                else:
+                    join_date_str_iso = join_date_str
+                    
+                join_date_obj = datetime.fromisoformat(join_date_str_iso)
+                
+                delta = datetime.now(timezone.utc) - join_date_obj
+                total_days = delta.days
+                
+                if total_days < 0:
+                    full_data['account_age'] = "Joined in the future?"
+                else:
+                    years = total_days // 365
+                    days_remaining = total_days % 365
+                    
+                    year_str = f"{years} Year" if years == 1 else f"{years} Years"
+                    day_str = f"{days_remaining} Day" if days_remaining == 1 else f"{days_remaining} Days"
+
+                    if years > 0:
+                        full_data['account_age'] = f"{year_str}, {day_str}"
+                    else:
+                        full_data['account_age'] = day_str
+                        
+            except Exception as e:
+                print(f"Error parsing date {join_date_str}: {e}")
+                full_data['account_age'] = "Error calculating age"
 
         def cnt(url):
             r, rl = try_request("get", url, headers=headers)
@@ -394,6 +460,12 @@ def get_user_info(identifier, use_cache=True, **options):
         if isinstance(followings, dict) and followings.get('error'):
             followings = [] 
         full_data['following_list'] = followings
+        
+        badge_ids = get_roblox_badges(user_id)
+        if isinstance(badge_ids, dict) and badge_ids.get('error'):
+            full_data['roblox_badges'] = ["Error fetching badges"] 
+        else:
+            full_data['roblox_badges'] = [ROBLOX_BADGE_TABLE[bid] for bid in badge_ids if bid in ROBLOX_BADGE_TABLE]
         
         if cache_username and use_cache:
             write_to_cache(cache_username, full_data)
