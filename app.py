@@ -53,8 +53,14 @@ def get_github_osint():
         github_data = github.get_github_info(username, use_cache=use_cache, **options)
         
         if github_data.get('error'):
-            if 'not found' in github_data.get('error', '').lower():
+            error_msg = github_data.get('error', '').lower()
+            if 'not found' in error_msg:
                 return jsonify(github_data), 404
+            
+            # This is the line you were trying to add, now corrected
+            if 'rate_limited' in error_msg:
+                return jsonify({'error': 'rate_limited'}), 429
+                
             return jsonify(github_data), 500
             
         return jsonify(github_data)
@@ -67,4 +73,3 @@ def get_github_osint():
 if __name__ == '__main__':
     utils.load_proxies()
     app.run(debug=True, port=5000)
-
