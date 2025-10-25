@@ -34,7 +34,7 @@ def get_user_agent():
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.85 Safari/537.36",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15",
-        "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0"
+        "Mozilla/5.o (X11; Ubuntu; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0"
     ]
     return random.choice(user_agents)
 
@@ -62,7 +62,10 @@ def try_request(method, url, headers=None, json_payload=None, form_data=None, co
             
             if r.status_code == 200:
                 return r, None
-            
+                
+            if r.status_code in [403, 401, 404]:
+                return r, None 
+
             print(f"Request failed (Status {r.status_code}), retrying...")
             retries += 1
             time.sleep(2)
@@ -84,7 +87,7 @@ def try_request(method, url, headers=None, json_payload=None, form_data=None, co
             continue
             
         proxy_url = f"http://{proxy}"
-        proxies = {"http": proxy_url, "https"}
+        proxies = {"http": proxy_url, "https": proxy_url}
         
         try:
             if method.lower() == "get":
@@ -96,7 +99,10 @@ def try_request(method, url, headers=None, json_payload=None, form_data=None, co
                     r = requests.post(url, headers=headers, cookies=cookies, data=form_data, proxies=proxies, timeout=timeout, allow_redirects=True)
                 
             if r.status_code == 200:
-                print("Request successful with proxy.")
+                print(f"Request successful with proxy {proxy_url}.")
+                return r, None
+            
+            if r.status_code in [403, 401, 404]:
                 return r, None
                 
         except requests.RequestException as e:
