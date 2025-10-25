@@ -11,6 +11,8 @@ def get_roblox_osint():
     if not identifier:
         return jsonify({'error': 'Missing "id" or "username" query parameter'}), 400
         
+    use_cache = request.args.get('cache', 'true').lower() != 'false'
+    
     options = {}
     for key in roblox.ALL_OPTION_KEYS:
         if request.args.get(key, 'true').lower() == 'false':
@@ -19,7 +21,7 @@ def get_roblox_osint():
             options[key] = True
 
     try:
-        user_info = roblox.get_user_info(identifier, **options)
+        user_info = roblox.get_user_info(identifier, use_cache=use_cache, **options)
         if not user_info:
             return jsonify({'error': 'User not found'}), 404
         if user_info.get('error'):
@@ -38,8 +40,17 @@ def get_github_osint():
     if not username:
         return jsonify({'error': 'Missing "username" query parameter'}), 400
 
+    use_cache = request.args.get('cache', 'true').lower() != 'false'
+    
+    options = {}
+    for key in github.ALL_OPTION_KEYS:
+        if request.args.get(key, 'true').lower() == 'false':
+            options[key] = False
+        else:
+            options[key] = True
+
     try:
-        github_data = github.get_github_info(username)
+        github_data = github.get_github_info(username, use_cache=use_cache, **options)
         
         if github_data.get('error'):
             if 'not found' in github_data.get('error', '').lower():
@@ -56,3 +67,4 @@ def get_github_osint():
 if __name__ == '__main__':
     utils.load_proxies()
     app.run(debug=True, port=5000)
+
