@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request, abort
 import roblox
-import snapchat
+import github 
 import utils
 
 app = Flask(__name__)
@@ -23,11 +23,33 @@ def get_roblox_osint():
         if not user_info:
             return jsonify({'error': 'User not found'}), 404
         if user_info.get('error'):
+            if 'User not found' in user_info.get('error'):
+                return jsonify(user_info), 404
             return jsonify(user_info), 500
             
         return jsonify(user_info)
     except Exception as e:
         print(f"Error in roblox endpoint: {e}")
+        return jsonify({'error': 'An internal server error occurred'}), 500
+
+@app.route('/v1/osint/github')
+def get_github_osint():
+    username = request.args.get('username')
+    if not username:
+        return jsonify({'error': 'Missing "username" query parameter'}), 400
+
+    try:
+        github_data = github.get_github_info(username)
+        
+        if github_data.get('error'):
+            if 'not found' in github_data.get('error', '').lower():
+                return jsonify(github_data), 404
+            return jsonify(github_data), 500
+            
+        return jsonify(github_data)
+        
+    except Exception as e:
+        print(f"Error in github endpoint: {e}")
         return jsonify({'error': 'An internal server error occurred'}), 500
 
 
