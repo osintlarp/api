@@ -16,8 +16,8 @@ def get_comments(username, after=None):
         
     res, error = try_request("get", url, headers=headers, params=params)
     
-    if error or not res:
-        print(f"Failed to fetch comments: {error}")
+    if error is not None or not res:
+        print(f"Failed to fetch comments: {error if error is not None else 'No response'}")
         return None, None
     if res.status_code != 200:
         print(f"Comment fetch status: {res.status_code}")
@@ -63,8 +63,8 @@ def get_submissions(username):
         
         res, error = try_request("get", url, headers=headers, params=params)
         
-        if error or not res:
-            print(f"Failed to fetch submissions: {error}")
+        if error is not None or not res:
+            print(f"Failed to fetch submissions: {error if error is not None else 'No response'}")
             break
         if res.status_code != 200:
             print(f"Submission fetch status: {res.status_code}")
@@ -131,9 +131,10 @@ def account_info(username):
     
     res, error = try_request("get", url, headers=headers)
     
-    if error or not res:
-        print(f"Failed to fetch account info: {error}")
-        return {"error": str(error) or "Request failed"}
+    if error is not None or not res:
+        print(f"Failed to fetch account info: {error if error is not None else 'No response'}")
+        return {"error": str(error) if error is not None else "Request failed"}
+        
     if res.status_code != 200:
         if res.status_code == 404:
             return {"error": "User not found"}
@@ -180,3 +181,4 @@ def analyze_user(username, page_limit=None):
         "comments": comments,
         "submissions": submissions
     }
+
