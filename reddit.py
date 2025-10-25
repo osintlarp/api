@@ -7,9 +7,11 @@ import random
 from operator import itemgetter
 from utils import try_request, get_user_agent
 
+REDDIT_USER_AGENT = "Mozilla/5.0 (compatible; RedditScraper/3.0)"
+
 def get_comments(username, after=None):
     url = f"https://www.reddit.com/user/{username}/comments/.json"
-    headers = {"User-Agent": get_user_agent()}
+    headers = {"User-Agent": REDDIT_USER_AGENT}
     params = {}
     if after:
         params["after"] = after
@@ -59,7 +61,7 @@ def get_submissions(username):
     after = ""
     while True:
         params = {"after": str(after)} if after else {}
-        headers = {"User-Agent": get_user_agent()}
+        headers = {"User-Agent": REDDIT_USER_AGENT}
         
         res, error = try_request("get", url, headers=headers, params=params)
         
@@ -127,7 +129,7 @@ def average(lst):
 
 def account_info(username):
     url = f"https://api.reddit.com/user/{username}/about"
-    headers = {"User-Agent": get_user_agent()}
+    headers = {"User-Agent": REDDIT_USER_AGENT}
     
     res, error = try_request("get", url, headers=headers)
     
@@ -181,4 +183,3 @@ def analyze_user(username, page_limit=None):
         "comments": comments,
         "submissions": submissions
     }
-
