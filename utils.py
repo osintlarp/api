@@ -41,7 +41,7 @@ def get_user_agent():
 def generate_random_token(length=22):
     return ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(length)])
 
-def try_request(method, url, headers=None, json_payload=None, form_data=None, cookies=None, params=None, max_retries=3, timeout=15):
+def try_request(method, url, headers=None, json_payload=None, form_data=None, cookies=None, params=None, max_retries=5, timeout=15):
     if headers is None:
         headers = {'User-Agent': get_user_agent()}
     
@@ -74,15 +74,17 @@ def try_request(method, url, headers=None, json_payload=None, form_data=None, co
             continue
 
     if not PROXIES:
-        return None, f"All retries failed. Last status: {r.status_code if 'r' in locals() else 'No response'}"
+        return None, f"All {max_retries} retries failed (no proxies available). Last status: {r.status_code if 'r' in locals() else 'No response'}"
 
+    print(f"Initial {max_retries} retries failed. Now trying with {len(PROXIES)} proxies...")
+    
     for i in range(len(PROXIES)):
         proxy = get_next_proxy()
         if not proxy:
             continue
             
         proxy_url = f"http://{proxy}"
-        proxies = {"http": proxy_url, "https": proxy_url}
+        proxies = {"http": proxy_url, "https"}
         
         try:
             if method.lower() == "get":
