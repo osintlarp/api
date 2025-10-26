@@ -41,72 +41,132 @@ def get_user_agent():
 def generate_random_token(length=22):
     return ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(length)])
 
-def try_request(method, url, headers=None, json_payload=None, form_data=None, cookies=None, params=None, max_retries=5, timeout=15):
+def try_request(
+    method,
+    url,
+    headers=None,
+    json_payload=None,
+    form_data=None,
+    cookies=None,
+    params=None,
+    max_retries=5,
+    timeout=15,
+):
     if headers is None:
-        headers = {'User-Agent': get_user_agent()}
-    
+        headers = {"User-Agent": get_user_agent()}
+
+    last_response = None
     retries = 0
+
     while retries < max_retries:
         try:
             if method.lower() == "get":
-                r = requests.get(url, headers=headers, cookies=cookies, params=params, timeout=timeout, allow_redirects=True)
+                r = requests.get(
+                    url,
+                    headers=headers,
+                    cookies=cookies,
+                    params=params,
+                    timeout=timeout,
+                    allow_redirects=True,
+                )
             elif method.lower() == "post":
                 if json_payload is not None:
-                    r = requests.post(url, headers=headers, cookies=cookies, json=json_payload, timeout=timeout, allow_redirects=True)
+                    r = requests.post(
+                        url,
+                        headers=headers,
+                        cookies=cookies,
+                        json=json_payload,
+                        timeout=timeout,
+                        allow_redirects=True,
+                    )
                 elif form_data is not None:
-                    r = requests.post(url, headers=headers, cookies=cookies, data=form_data, timeout=timeout, allow_redirects=True)
+                    r = requests.post(
+                        url,
+                        headers=headers,
+                        cookies=cookies,
+                        data=form_data,
+                        timeout=timeout,
+                        allow_redirects=True,
+                    )
                 else:
                     return None, "No payload provided for POST request"
             else:
                 return None, "Unsupported method"
-            
-            if r.status_code == 200:
-                return r, None
-                
-            if r.status_code in [403, 401, 404]:
-                return r, None 
 
-            print(f"Request failed (Status {r.status_code}), retrying...")
+            last_response = r
+
+            # Akzeptiere auch nicht-200-Status, solange Reddit antwortet
+            if r.status_code in [200, 301, 302, 403, 404, 429]:
+                return r, None
+
+            print(f"[try_request] HTTP {r.status_code} → retrying...")
             retries += 1
             time.sleep(2)
-            
+
         except requests.RequestException as e:
-            print(f"Request exception: {e}, retrying...")
+            print(f"[try_request] Exception: {e} → retrying...")
             retries += 1
             time.sleep(2)
             continue
 
+    # Wenn alle normalen Versuche fehlgeschlagen sind:
     if not PROXIES:
-        return None, f"All {max_retries} retries failed (no proxies available). Last status: {r.status_code if 'r' in locals() else 'No response'}"
+        return last_response, f"Failed after {max_retries} retries (no proxies used)"
 
-    print(f"Initial {max_retries} retries failed. Now trying with {len(PROXIES)} proxies...")
-    
+    print(f"[try_request] Switching to proxy mode with {len(PROXIES)} proxies...")
+
     for i in range(len(PROXIES)):
         proxy = get_next_proxy()
         if not proxy:
             continue
-            
+
         proxy_url = f"http://{proxy}"
         proxies = {"http": proxy_url, "https": proxy_url}
-        
+
         try:
             if method.lower() == "get":
-                r = requests.get(url, headers=headers, cookies=cookies, params=params, proxies=proxies, timeout=timeout, allow_redirects=True)
+                r = requests.get(
+                    url,
+                    headers=headers,
+                    cookies=cookies,
+                    params=params,
+                    proxies=proxies,
+                    timeout=timeout,
+                    allow_redirects=True,
+                )
             elif method.lower() == "post":
                 if json_payload is not None:
-                    r = requests.post(url, headers=headers, cookies=cookies, json=json_payload, proxies=proxies, timeout=timeout, allow_redirects=True)
+                    r = requests.post(
+                        url,
+                        headers=headers,
+                        cookies=cookies,
+                        json=json_payload,
+                        proxies=proxies,
+                        timeout=timeout,
+                        allow_redirects=True,
+                    )
                 elif form_data is not None:
-                    r = requests.post(url, headers=headers, cookies=cookies, data=form_data, proxies=proxies, timeout=timeout, allow_redirects=True)
-                
-            if r.status_code == 200:
-                print(f"Request successful with proxy {proxy_url}.")
+                    r = requests.post(
+                        url,
+                        headers=headers,
+                        cookies=cookies,
+                        data=form_data,
+                        proxies=proxies,
+                        timeout=timeout,
+                        allow_redirects=True,
+                    )
+
+            last_response = r
+
+            if r.status_code in [200, 301, 302, 403, 404, 429]:
+                print(f"[try_request] Success with proxy {proxy_url} ({r.status_code})")
                 return r, None
-            
-            if r.status_code in [403, 401, 404]:
-                return r, None
-                
+
         except requests.RequestException as e:
-            print(f"Proxy {proxy} failed: {e}")
+            print(f"[try_request] Proxy {proxy} failed: {e}")
             continue
+
+    return last_response, "All proxies failed"
+
             
     return None, "All proxies failed"
