@@ -8,6 +8,7 @@ from operator import itemgetter
 from utils import try_request, get_user_agent
 
 REDDIT_USER_AGENT = "Mozilla/5.0 (compatible; RedditScraper/3.0)"
+DEBUG = True
 
 def get_comments(username, after=None):
     url = f"https://www.reddit.com/user/{username}/comments/.json"
@@ -132,9 +133,17 @@ def account_info(username):
     headers = {"User-Agent": REDDIT_USER_AGENT}
     
     res, error = try_request("get", url, headers=headers)
-    
+
+    if DEBUG:
+        if res is not None:
+            try:
+                return res.json()
+            except Exception:
+                return {"raw_response": res.text, "status": res.status_code}
+        else:
+            return {"error": str(error) if error else "Request failed"}
+
     if error is not None or not res:
-        print(f"Failed to fetch account info: {error if error is not None else 'No response'}")
         return {"error": str(error) if error is not None else "Request failed"}
         
     if res.status_code != 200:
