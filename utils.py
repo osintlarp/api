@@ -3,7 +3,6 @@ import random
 import time
 import threading
 from requests.auth import HTTPBasicAuth
-from reddit import REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USERNAME, REDDIT_PASSWORD
 
 PROXIES_FILE = "proxies.txt"
 PROXIES = []
@@ -12,6 +11,11 @@ _proxy_lock = threading.Lock()
 _token_lock = threading.Lock()
 _cached_token = None
 _token_expiry_ts = 0
+
+REDDIT_CLIENT_ID = "yQ1EUQIkXK98dO0rLAMxxg"
+REDDIT_CLIENT_SECRET = "srnL8PGmbCba2EY4ELaCZQy77s4sTQ"
+REDDIT_USERNAME = "Remarkable_Deer_7685"
+REDDIT_PASSWORD = ""
 
 def load_proxies():
     global PROXIES
