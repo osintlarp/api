@@ -69,36 +69,6 @@ def get_github_osint():
         print(f"Error in github endpoint: {e}")
         return jsonify({'error': 'An internal server error occurred'}), 500
 
-@app.route('/v1/osint/reddit')
-def get_reddit_osint():
-    username = request.args.get('username')
-    if not username:
-        return jsonify({'error': 'Missing "username" query parameter'}), 400
-        
-    try:
-        page_limit = request.args.get('page_limit')
-        if page_limit is not None:
-            page_limit = int(page_limit)
-        else:
-            page_limit = 1 
-    except ValueError:
-        return jsonify({'error': '"page_limit" must be an integer'}), 400
-
-    try:
-        reddit_data = reddit.analyze_user(username, page_limit=page_limit)
-        
-        if reddit_data.get('error'):
-            error_msg = reddit_data.get('error', '').lower()
-            if 'not found' in error_msg:
-                return jsonify(reddit_data), 404
-            return jsonify(reddit_data), 500
-            
-        return jsonify(reddit_data)
-        
-    except Exception as e:
-        print(f"Error in reddit endpoint: {e}")
-        return jsonify({'error': 'An internal server error occurred'}), 500
-
 
 if __name__ == '__main__':
     utils.load_proxies()
