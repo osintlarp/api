@@ -8,14 +8,6 @@ PROXIES_FILE = "proxies.txt"
 PROXIES = []
 PROXY_INDEX = 0
 _proxy_lock = threading.Lock()
-_token_lock = threading.Lock()
-_cached_token = None
-_token_expiry_ts = 0
-
-REDDIT_CLIENT_ID = "yQ1EUQIkXK98dO0rLAMxxg"
-REDDIT_CLIENT_SECRET = "srnL8PGmbCba2EY4ELaCZQy77s4sTQ"
-REDDIT_USERNAME = "Remarkable_Deer_7685"
-REDDIT_PASSWORD = ""
 
 def load_proxies():
     global PROXIES
@@ -43,43 +35,6 @@ def get_user_agent():
     ]
     return random.choice(user_agents)
 
-def _fetch_reddit_token():
-    global _cached_token, _token_expiry_ts
-    with _token_lock:
-        now = int(time.time())
-        if _cached_token and now < (_token_expiry_ts - 10):
-            return _cached_token
-        user_agent = get_user_agent()
-        auth = HTTPBasicAuth(REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET)
-        data = {"grant_type": "password", "username": REDDIT_USERNAME, "password": REDDIT_PASSWORD}
-        headers = {"User-Agent": user_agent}
-        try:
-            r = requests.post("https://www.reddit.com/api/v1/access_token", auth=auth, data=data, headers=headers, timeout=15)
-        except requests.RequestException:
-            return None
-        if r.status_code != 200:
-            return None
-        try:
-            token_json = r.json()
-        except ValueError:
-            return None
-        access_token = token_json.get("access_token")
-        expires_in = int(token_json.get("expires_in", 3600))
-        if not access_token:
-            return None
-        _cached_token = access_token
-        _token_expiry_ts = int(time.time()) + expires_in
-        return _cached_token
-
-def get_oauth_headers(extra_headers=None):
-    token = _fetch_reddit_token()
-    if token:
-        h = {"Authorization": f"bearer {token}", "User-Agent": get_user_agent()}
-    else:
-        h = {"User-Agent": get_user_agent()}
-    if extra_headers:
-        h.update(extra_headers)
-    return h
 
 def try_request(method, url, headers=None, json_payload=None, form_data=None, cookies=None, params=None, max_retries=3, timeout=15, use_proxies=False):
     if headers is None:
