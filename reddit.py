@@ -5,46 +5,43 @@ from datetime import datetime, timezone
 import time
 import random
 from operator import itemgetter
-from utils import try_request, get_user_agent
+from utils import try_request, get_oauth_headers
 
 REDDIT_USER_AGENT = "Mozilla/5.0 (compatible; RedditScraper/3.0)"
-DEBUG = True
+
+REDDIT_CLIENT_ID = "yQ1EUQIkXK98dO0rLAMxxg"
+REDDIT_CLIENT_SECRET = "srnL8PGmbCba2EY4ELaCZQy77s4sTQ"
+REDDIT_USERNAME = "Remarkable_Deer_7685"
+REDDIT_PASSWORD = ""
 
 def get_comments(username, after=None):
     url = f"https://www.reddit.com/user/{username}/comments/.json"
-    headers = {"User-Agent": REDDIT_USER_AGENT}
     params = {}
     if after:
         params["after"] = after
-        
+    headers = get_oauth_headers()
     res, error = try_request("get", url, headers=headers, params=params)
-    
-    if error is not None or not res:
-        print(f"Failed to fetch comments: {error if error is not None else 'No response'}")
+    if error or not res or res.status_code != 200:
+        print(f"Failed to fetch comments: {error if error else res.status_code}")
         return None, None
-    if res.status_code != 200:
-        print(f"Comment fetch status: {res.status_code}")
-        return None, None
-        
     try:
         data = res.json().get("data", None)
     except json.JSONDecodeError:
         return None, None
-        
     if not data:
         return None, None
     comments = []
     for item in data["children"]:
         c = item["data"]
         comments.append({
-            "comment_id": c["id"],
-            "username": c["author"],
-            "post_id": c["link_id"].split("_")[1],
-            "post_title": c.get("link_title", ""),
-            "subreddit": c["subreddit"],
-            "date_created": datetime.fromtimestamp(c["created"], tz=timezone.utc).isoformat(),
-            "body": c.get("body", ""),
-            "score": c.get("score", 0),
+            "comment_id": c.get("id"),
+            "username": c.get("author"),
+            "post_id": c.get("link_id", "").split("_")[1] if "link_id" in c else None,
+            "post_title": c.get("link_title",""),
+            "subreddit": c.get("subreddit",""),
+            "date_created": datetime.fromtimestamp(c.get("created",0), tz=timezone.utc).isoformat(),
+            "body": c.get("body",""),
+            "score": c.get("score",0),
             "over_18": c.get("over_18"),
             "banned_at_utc": c.get("banned_at_utc"),
             "mod_reason_title": c.get("mod_reason_title"),
@@ -57,35 +54,27 @@ def get_comments(username, after=None):
     return comments, data.get("after")
 
 def get_submissions(username):
-    url = f"https://api.reddit.com/user/{username}/submitted?limit=100"
+    url = f"https://www.reddit.com/user/{username}/submitted/.json"
     submissions = []
-    after = ""
+    after = None
     while True:
-        params = {"after": str(after)} if after else {}
-        headers = {"User-Agent": REDDIT_USER_AGENT}
-        
+        params = {"after": after} if after else {}
+        headers = get_oauth_headers()
         res, error = try_request("get", url, headers=headers, params=params)
-        
-        if error is not None or not res:
-            print(f"Failed to fetch submissions: {error if error is not None else 'No response'}")
+        if error or not res or res.status_code != 200:
+            print(f"Failed to fetch submissions: {error if error else res.status_code}")
             break
-        if res.status_code != 200:
-            print(f"Submission fetch status: {res.status_code}")
-            break
-            
         try:
             res_json = res.json()
         except json.JSONDecodeError:
-            print("Failed to decode submission JSON")
             break
-            
         children = res_json.get("data", {}).get("children", [])
         if not children:
             break
         for s in children:
-            d = s["data"]
+            d = s.get("data", {})
             submissions.append({
-                "post_id": d["id"],
+                "post_id": d.get("id"),
                 "title": d.get("title",""),
                 "subreddit": d.get("subreddit",""),
                 "score": d.get("score",0),
@@ -129,39 +118,19 @@ def average(lst):
     return round(float(sum(lst))/len(lst),2) if lst else 0.0
 
 def account_info(username):
-    url = f"https://api.reddit.com/user/{username}/about"
-    headers = {"User-Agent": REDDIT_USER_AGENT}
-    
+    url = f"https://www.reddit.com/user/{username}/about/.json"
+    headers = get_oauth_headers()
     res, error = try_request("get", url, headers=headers)
-
-    if DEBUG:
-        if res is not None:
-            try:
-                return res.json()
-            except Exception:
-                return {"raw_response": res.text, "status": res.status_code}
-        else:
-            return {"error": str(error) if error else "Request failed"}
-
-    if error is not None or not res:
-        return {"error": str(error) if error is not None else "Request failed"}
-        
-    if res.status_code != 200:
-        if res.status_code == 404:
-            return {"error": "User not found"}
-        return {"error": f"Account info fetch status: {res.status_code}"}
-
+    if error or not res or res.status_code != 200:
+        return {"error": f"{error if error else res.status_code}"}
     try:
         d = res.json().get("data", {})
     except json.JSONDecodeError:
         return {"error": "Failed to decode account info"}
-
     total_karma = int(d.get("comment_karma",0)) + int(d.get("link_karma",0))
     created_ts = d.get("created_utc",0)
-    
     if not created_ts:
         return {"error": "User not found or data incomplete"}
-        
     return {
         "username": d.get("name"),
         "total_karma": total_karma,
@@ -175,10 +144,8 @@ def analyze_user(username, page_limit=None):
     info = account_info(username)
     if info.get("error"):
         return info
-        
     comments = run_comments(username, page_limit)
     submissions = get_submissions(username)
-    
     stats = {
         "top_subreddits_comments": sort_data(filter_data(comments,"subreddit")),
         "top_subreddits_posts": sort_data(filter_data(submissions,"subreddit")),
