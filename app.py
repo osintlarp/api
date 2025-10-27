@@ -1,7 +1,6 @@
 from flask import Flask, jsonify, request, abort
 import roblox
-import github 
-import reddit 
+import github  
 import utils
 
 app = Flask(__name__)
