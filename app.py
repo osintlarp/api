@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request, abort
 import roblox
 import github  
 import utils
+import tiktok
 
 app = Flask(__name__)
 
@@ -68,6 +69,12 @@ def get_github_osint():
         print(f"Error in github endpoint: {e}")
         return jsonify({'error': 'An internal server error occurred'}), 500
 
+@app.route("/v1/osint/tiktok", methods=["GET"])
+def osint_tiktok():
+    username = request.args.get("username")
+    force_proxy = request.args.get("force_proxy", "false").lower() == "true"
+    data, status = get_tiktok_data(username, ForceProxy=force_proxy)
+    return jsonify(data), status
 
 if __name__ == '__main__':
     utils.load_proxies()
