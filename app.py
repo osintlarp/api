@@ -9,17 +9,29 @@ import utils
 import hashlib
 
 app = Flask(__name__)
+BYPASS_TOKEN = "BOT-QWPPXCYNNMJUWGAG-X"
 
-def hash_ip():
+def dynamic_key_func():
+    if getattr(request, "_bypass_limiter", False):
+        return None
     ip = get_remote_address()
-    hashed = hashlib.sha256(ip.encode()).hexdigest()
-    return hashed
+    import hashlib
+    return hashlib.sha256(ip.encode()).hexdigest()
+
+def bypass_token(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get("Authorization") or request.headers.get("X-Api-Token")
+        if token == BYPASS_TOKEN:
+            request._bypass_limiter = True
+        return f(*args, **kwargs)
+    return decorated
 
 limiter = Limiter(
-    key_func=hash_ip,
+    key_func=dynamic_key_func,
     default_limits=["300 per hour"]
 )
-limiter.init_app(app) 
+limiter.init_app(app)
 
 CORS(app, origins=["https://vaul3t.org", "https://api.vaul3t.org"])
 
@@ -77,6 +89,7 @@ def get_github_osint():
 
 @app.route("/v1/osint/tiktok", methods=["GET"])
 @limiter.limit("300/hour")
+@bypass_token
 def osint_tiktok():
     username = request.args.get("username")
     if not username:
