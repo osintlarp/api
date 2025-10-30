@@ -1,8 +1,8 @@
 from flask import Flask, jsonify, request, abort
+from tiktok import get_tiktok_data
 import roblox
 import github  
 import utils
-import tiktok
 
 app = Flask(__name__)
 
