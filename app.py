@@ -16,10 +16,10 @@ def hash_ip():
     return hashed
 
 limiter = Limiter(
-    app,
     key_func=hash_ip,
     default_limits=["300 per hour"]
 )
+limiter.init_app(app) 
 
 CORS(app, origins=["https://vaul3t.org", "https://api.vaul3t.org"])
 
