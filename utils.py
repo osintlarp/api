@@ -44,12 +44,39 @@ def get_user_agent():
     return random.choice(user_agents)
 
 
-def try_request(method, url, headers=None, json_payload=None, form_data=None, cookies=None, params=None, max_retries=3, timeout=15, use_proxies=False):
+def try_request(method, url, headers=None, json_payload=None, form_data=None, cookies=None, params=None, max_retries=3, timeout=15, use_proxies=False, ForceProxy=False):
     if headers is None:
         headers = {}
     
     if not any(k.lower() == "user-agent" for k in headers.keys()):
         headers["User-Agent"] = get_user_agent()
+
+    if ForceProxy and PROXIES:
+        proxy = get_next_proxy()
+        if proxy:
+            proxy_url = f"http://{proxy}"
+            proxies = {"http": proxy_url, "https": proxy_url}
+            try:
+                print(f"[ForceProxy] Using proxy: {proxy}")
+                if method.lower() == "get":
+                    r = requests.get(url, headers=headers, cookies=cookies, params=params, proxies=proxies, timeout=timeout, allow_redirects=True)
+                elif method.lower() == "post":
+                    if json_payload is not None:
+                        r = requests.post(url, headers=headers, cookies=cookies, json=json_payload, proxies=proxies, timeout=timeout, allow_redirects=True)
+                    elif form_data is not None:
+                        r = requests.post(url, headers=headers, cookies=cookies, data=form_data, proxies=proxies, timeout=timeout, allow_redirects=True)
+                    else:
+                        return None, "No payload provided for POST request"
+                else:
+                    return None, "Unsupported method"
+                
+                return r, None
+            except requests.RequestException as e:
+                print(f"[ForceProxy] Proxy {proxy} failed: {e}")
+                return None, str(e)
+        else:
+            print("[ForceProxy] No proxies available.")
+            return None, "No proxies available"
 
     retries = 0
     while retries < max_retries:
@@ -62,10 +89,8 @@ def try_request(method, url, headers=None, json_payload=None, form_data=None, co
                 elif form_data is not None:
                     r = requests.post(url, headers=headers, cookies=cookies, data=form_data, timeout=timeout, allow_redirects=True)
                 else:
-                    print("Error: No payload (json_payload or form_data) provided for POST request.")
                     return None, "No payload provided for POST request"
             else:
-                print(f"Error: Unsupported HTTP method '{method}'.")
                 return None, "Unsupported method"
             
             return r, None
@@ -73,7 +98,7 @@ def try_request(method, url, headers=None, json_payload=None, form_data=None, co
         except requests.RequestException as e:
             print(f"Request attempt {retries + 1} failed: {e}")
             retries += 1
-            time.sleep(1) 
+            time.sleep(1)
 
     if use_proxies and PROXIES:
         print("All standard retries failed. Trying with proxies...")
@@ -82,7 +107,7 @@ def try_request(method, url, headers=None, json_payload=None, form_data=None, co
             if not proxy:
                 continue
             
-            proxy_url = f"http://{proxy}" 
+            proxy_url = f"http://{proxy}"
             proxies = {"http": proxy_url, "https": proxy_url}
             
             try:
@@ -96,14 +121,12 @@ def try_request(method, url, headers=None, json_payload=None, form_data=None, co
                         r = requests.post(url, headers=headers, cookies=cookies, data=form_data, proxies=proxies, timeout=timeout, allow_redirects=True)
                     else:
                         continue 
-                
                 return r, None
-                
             except requests.RequestException as e:
                 print(f"Proxy {proxy} failed: {e}")
-                continue 
+                continue
+
+    return None, "All retries failed"
                 
-    print(f"All retries and proxies failed for URL: {url}")
-    return None, "All retries/proxies failed"
 
 
