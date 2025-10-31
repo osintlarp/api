@@ -38,6 +38,7 @@ CORS(app, origins=["https://vaul3t.org", "https://api.vaul3t.org"])
 
 @app.route('/v1/osint/roblox')
 @limiter.limit("300/hour")
+@bypass_token
 def get_roblox_osint():
     identifier = request.args.get('id') or request.args.get('username')
     if not identifier:
