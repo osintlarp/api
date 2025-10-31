@@ -36,7 +36,6 @@ limiter = Limiter(
 )
 limiter.init_app(app)
 
-CORS(app, origins=["https://vaul3t.org", "https://api.vaul3t.org"])
 
 @app.route('/v1/osint/roblox')
 @limiter.limit("300/hour")
@@ -106,7 +105,6 @@ def osint_tiktok():
 
 @app.route("/v1/osint/instagram", methods=["GET", "OPTIONS"])
 @limiter.limit("300/hour")
-@cross_origin(origins="https://vaul3t.org")
 def osint_instagram():
     username = request.args.get("username")
     if not username:
