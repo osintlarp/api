@@ -4,6 +4,7 @@ from flask_limiter.util import get_remote_address
 from flask_cors import CORS
 from functools import wraps
 from tiktok import get_tiktok_data
+from instagram import fetch_instagram_data
 import roblox
 import github  
 import utils
@@ -101,6 +102,16 @@ def osint_tiktok():
     use_cache = request.args.get("cache", "true").lower() != 'false'
 
     data, status = get_tiktok_data(username, ForceProxy=force_proxy, use_cache=use_cache)
+    return jsonify(data), status
+
+@app.route("/v1/osint/instagram", methods=["GET"])
+@limiter.limit("300/hour")
+def osint_instagram():
+    username = request.args.get("username")
+    if not username:
+        return jsonify({'error': 'Missing "username" query parameter'}), 400
+        
+    data, status = fetch_instagram_data(username)
     return jsonify(data), status
 
 if __name__ == '__main__':
