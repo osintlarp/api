@@ -1,79 +1,129 @@
-import os
-import json
-import time
+import os, re, json, requests, pycountry
+from datetime import datetime, timezone
 from utils import try_request
 
-CACHE_FOLDER_OS = "_CACHE_TIKTOK_OS_"
 CACHE_FOLDER_CY = "_CACHE_TIKTOK_CY_"
-CACHE_EXPIRY = 3600
+URI_BASE = "https://www.tiktok.com/"
 
-os.makedirs(CACHE_FOLDER_OS, exist_ok=True)
 os.makedirs(CACHE_FOLDER_CY, exist_ok=True)
 
-def load_cache(file_path):
-    if os.path.exists(file_path):
+def load_cache(path):
+    if os.path.exists(path):
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
+        except:
             return None
     return None
 
-def save_cache(file_path, data):
-    with open(file_path, "w", encoding="utf-8") as f:
+def save_cache(path, data):
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f)
 
-def get_tiktok_data(username, ForceProxy=False, use_cache=True):
-    cache_file_os = os.path.join(CACHE_FOLDER_OS, f"{username}.json")
-    cache_file_cy = os.path.join(CACHE_FOLDER_CY, f"{username}.json")
+def get_language_name(code):
+    if not code: return "N/A"
+    try:
+        l = pycountry.languages.get(alpha_2=code.lower())
+        return l.name
+    except:
+        return code.upper()
 
-    data_os = None
-    if use_cache:
-        data_os = load_cache(cache_file_os)
-        if data_os and time.time() - data_os.get("_timestamp_", 0) > CACHE_EXPIRY:
-            data_os = None
-        elif data_os:
-            data_os["usingCache"] = True
-            data_os["cache"] = True
-            country = data_os.get("data", {}).get("country")
-            if country:
-                save_cache(cache_file_cy, {"username": username, "country": country})
-            return data_os, 200
+def get_country_name(code):
+    if not code: return "N/A"
+    try:
+        c = pycountry.countries.get(alpha_2=code.upper())
+        return c.name
+    except:
+        return code.upper()
 
-    api_url = "https://tiktok-proxy-6uacic33j-telegram4.vercel.app/api"
+def get_country_flag(code):
+    if not code or len(code) != 2: return ""
+    try:
+        return ''.join([chr(0x1F1E6 + ord(c.upper()) - ord('A')) for c in code])
+    except:
+        return ""
+
+def convert_timestamp(ts):
+    if not ts: return "N/A"
+    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%d %b %Y %H:%M")
+
+def fetch_tiktok_html(identifier):
+    headers = {"user-agent": "Mozilla/5.0 (compatible; Google-Apps-Script)"}
+    r = requests.get(f"{URI_BASE}@{identifier}/?lang=en", headers=headers)
+    return r.text
+
+def extract_json(html):
+    m = re.search(r'<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__"[^>]*>([^<]+)</script>', html)
+    return json.loads(m.group(1)) if m else {}
+
+def get_country_from_api(username, ForceProxy=False):
+    api = "https://tiktok-proxy-6uacic33j-telegram4.vercel.app/api"
     params = {"username": username}
-    r, err = try_request(method="get", url=api_url, params=params, ForceProxy=ForceProxy)
-    if err or not r:
-        cached_country = load_cache(cache_file_cy)
-        if cached_country:
-            response = cached_country.copy()
-            response["usingCache"] = True
-            response["cache"] = True
-            return response, 200
-        return {"success": False, "error": str(err)}, 500
+    r, err = try_request("get", api, params=params, ForceProxy=ForceProxy)
+    if not r: return None
+    try:
+        return r.json().get("data", {}).get("country")
+    except:
+        return None
+
+def get_tiktok_data(username, ForceProxy=False):
+    u = username.lstrip("@").lower()
+    cache_cy = os.path.join(CACHE_FOLDER_CY, f"{u}.json")
 
     try:
-        data_os = r.json()
-        data_os["_timestamp_"] = time.time()
-        data_os["usingCache"] = False
-        data_os["cache"] = False
-        save_cache(cache_file_os, data_os)
+        html = fetch_tiktok_html(u)
+        json_data = extract_json(html)
+        user_info = json_data["__DEFAULT_SCOPE__"]["webapp.user-detail"]["userInfo"]
+        user = user_info["user"]
+        stats = user_info["stats"]
+    except:
+        cc = load_cache(cache_cy)
+        if cc:
+            return {"username": u, "country": cc["country"], "usingCache": True}, 200
+        return {"success": False, "error": "Failed to fetch user"}, 500
 
-        country = data_os.get("data", {}).get("country")
-        if country:
-            save_cache(cache_file_cy, {"username": username, "country": country})
-        else:
-            cached_country = load_cache(cache_file_cy)
-            if cached_country:
-                data_os["data"]["country"] = cached_country["country"]
-                data_os["usingCache"] = True
+    country = get_country_from_api(u, ForceProxy)
+    using_cache = False
+    if not country:
+        cc = load_cache(cache_cy)
+        if cc:
+            country = cc["country"]
+            using_cache = True
 
-        return data_os, 200
-    except Exception:
-        cached_country = load_cache(cache_file_cy)
-        if cached_country:
-            response = cached_country.copy()
-            response["usingCache"] = True
-            response["cache"] = True
-            return response, 200
-        return {"success": False, "error": "Invalid JSON response"}, 500
+    if country:
+        save_cache(cache_cy, {"username": u, "country": country})
+
+    region = user.get("region")
+    lang = get_language_name(user.get("language"))
+    country_name = get_country_name(region)
+    flag = get_country_flag(region)
+
+    create_time = user.get("createTime")
+    account_age = (datetime.now(timezone.utc) - datetime.fromtimestamp(create_time, timezone.utc)) if create_time else None
+    is_new = account_age.days <= 30 if account_age else False
+
+    data = {
+        "ID": user["id"],
+        "Username": f"@{user['uniqueId']}",
+        "DisplayName": user["nickname"],
+        "Bio": user["signature"] or "No bio",
+        "BioLink": user.get("bioLink", {}).get("link", "N/A"),
+        "Country": country or f"{country_name} {flag}",
+        "Language": lang,
+        "Verified": user["verified"],
+        "Private": user["privateAccount"],
+        "Created": convert_timestamp(user.get("createTime")),
+        "NameUpdated": convert_timestamp(user.get("nickNameModifyTime")),
+        "UsernameUpdated": convert_timestamp(user.get("uniqueIdModifyTime")),
+        "Following": stats["followingCount"],
+        "Followers": stats["followerCount"],
+        "Videos": stats["videoCount"],
+        "Likes": stats["heartCount"],
+        "Friends": stats["friendCount"],
+        "Profile": f"{URI_BASE}@{user['uniqueId']}",
+        "Avatar": user.get("avatarLarger", "N/A"),
+        "NewAccount": is_new,
+        "usingCache": using_cache
+    }
+
+    return data, 200
