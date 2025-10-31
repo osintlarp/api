@@ -103,8 +103,9 @@ def osint_tiktok():
     data, status = get_tiktok_data(username, ForceProxy=force_proxy)
     return jsonify(data), status
 
-@app.route("/v1/osint/instagram", methods=["GET"])
+@app.route("/v1/osint/instagram", methods=["GET", "OPTIONS"])
 @limiter.limit("300/hour")
+@cross_origin(origins="https://vaul3t.org")
 def osint_instagram():
     username = request.args.get("username")
     if not username:
