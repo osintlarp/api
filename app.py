@@ -14,6 +14,8 @@ import hashlib
 app = Flask(__name__)
 BYPASS_TOKEN = "BOT-QWPPXCYNNMJUWGAG-X"
 
+CORS(app)
+
 def dynamic_key_func():
     if getattr(request, "_bypass_limiter", False):
         return None
