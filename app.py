@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 from flask_limiter import Limiter
+from flask_cors import cross_origin
 from flask_limiter.util import get_remote_address
 from flask_cors import CORS
 from functools import wraps
