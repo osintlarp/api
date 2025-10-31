@@ -96,12 +96,11 @@ def get_github_osint():
 def osint_tiktok():
     username = request.args.get("username")
     if not username:
-        return jsonify({'error': 'Missing "username" query parameter'}), 400
+        return jsonify({"success": False, "error": "Missing 'username' parameter"}), 400
 
     force_proxy = request.args.get("force_proxy", "false").lower() == "true"
-    use_cache = request.args.get("cache", "true").lower() != 'false'
 
-    data, status = get_tiktok_data(username, ForceProxy=force_proxy, use_cache=use_cache)
+    data, status = get_tiktok_data(username, ForceProxy=force_proxy)
     return jsonify(data), status
 
 @app.route("/v1/osint/instagram", methods=["GET"])
