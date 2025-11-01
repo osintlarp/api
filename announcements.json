@@ -1,0 +1,14 @@
+{
+  "announcements": [
+    {
+      "title": "Back UP",
+      "description": "Bot is back up after 1 month of down-time.",
+      "date": "2025-11-01"
+    },
+    {
+      "title": "New Feature Released",
+      "description": "We are excited to launch VAUL3T! Stay tuned for exciting updates.",
+      "date": "2025-8-01"
+    }
+  ]
+}
