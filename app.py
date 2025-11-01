@@ -43,6 +43,10 @@ def load_endpoints():
     with open('endpoints.json', 'r') as f:
         return json.load(f)
 
+def load_announcements():
+    with open('announcements.json', 'r') as f:
+        return json.load(f)
+
 @app.route('/v1/osint/roblox')
 @limiter.limit("300/hour")
 @bypass_token
@@ -123,6 +127,11 @@ def osint_instagram():
 def api_endpoints():
     endpoints = load_endpoints()
     return jsonify(endpoints)
+
+@app.route('/v1/announcements', methods=['GET'])
+def announcements():
+    data = load_announcements()
+    return jsonify(data)
 
 if __name__ == '__main__':
     utils.load_proxies()
