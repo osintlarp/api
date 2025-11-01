@@ -6,6 +6,7 @@ from flask_cors import CORS
 from functools import wraps
 from tiktok import get_tiktok_data
 from instagram import fetch_instagram_data
+import json
 import roblox
 import github  
 import utils
@@ -38,6 +39,9 @@ limiter = Limiter(
 )
 limiter.init_app(app)
 
+def load_endpoints():
+    with open('endpoints.json', 'r') as f:
+        return json.load(f)
 
 @app.route('/v1/osint/roblox')
 @limiter.limit("300/hour")
@@ -114,6 +118,11 @@ def osint_instagram():
         
     data, status = fetch_instagram_data(username)
     return jsonify(data), status
+
+@app.route('/v1/api_endpoints', methods=['GET'])
+def api_endpoints():
+    endpoints = load_endpoints()
+    return jsonify(endpoints)
 
 if __name__ == '__main__':
     utils.load_proxies()
