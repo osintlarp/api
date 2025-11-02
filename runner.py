@@ -42,6 +42,7 @@ class Runner:
                     runner['total_request'] = self.runner_data.get('total_request', 0)
                     runner['last_request'] = self.runner_data.get('last_request')
                     runner['running_since'] = self.runner_data.get('running_since')
+                    runner['request_history'] = self.runner_data.get('request_history', [])
                     break
 
             with open(user_file, 'w') as f:
@@ -74,6 +75,24 @@ class Runner:
 
     def update_status(self, status):
         self.runner_data['status'] = status
+        self.save_runner_data()
+
+    def add_request_record(self, status, response_code=None):
+        """Add a request record to the history"""
+        if 'request_history' not in self.runner_data:
+            self.runner_data['request_history'] = []
+        
+        record = {
+            'timestamp': datetime.now().isoformat(),
+            'status': status,
+            'response_code': response_code
+        }
+        
+        # Keep only the last 1000 records to prevent file from growing too large
+        self.runner_data['request_history'].append(record)
+        if len(self.runner_data['request_history']) > 1000:
+            self.runner_data['request_history'] = self.runner_data['request_history'][-1000:]
+        
         self.save_runner_data()
 
     def add_change(self, change):
@@ -115,22 +134,41 @@ class Runner:
 
     def make_request_with_proxy(self, url):
         response = None
-        if self.current_proxy:
-            proxies = {'http': f'http://{self.current_proxy}', 'https': f'http://{self.current_proxy}'}
-            try:
-                response = requests.get(url, proxies=proxies, timeout=30)
-            except requests.exceptions.RequestException:
-                self.current_proxy = self.find_working_proxy()
-                if self.current_proxy:
-                    return self.make_request_with_proxy(url)
+        request_status = "Failed"
+        response_code = None
+        
+        try:
+            if self.current_proxy:
+                proxies = {'http': f'http://{self.current_proxy}', 'https': f'http://{self.current_proxy}'}
+                try:
+                    response = requests.get(url, proxies=proxies, timeout=30)
+                except requests.exceptions.RequestException:
+                    self.current_proxy = self.find_working_proxy()
+                    if self.current_proxy:
+                        return self.make_request_with_proxy(url)
+                    else:
+                        response = requests.get(url, timeout=30)
+            else:
+                response = requests.get(url, timeout=30)
+                
+            if response is not None:
+                response_code = response.status_code
+                if response.status_code == 200:
+                    request_status = "Successful"
+                elif response.status_code == 429:
+                    request_status = "Rate-Limited"
                 else:
-                    response = requests.get(url, timeout=30)
-        else:
-            response = requests.get(url, timeout=30)
-        if response is not None:
-            self.runner_data['last_request'] = datetime.now().isoformat()
-            self.runner_data['total_request'] = self.runner_data.get('total_request', 0) + 1
-            self.save_runner_data()
+                    request_status = "Failed"
+                    
+                self.runner_data['last_request'] = datetime.now().isoformat()
+                self.runner_data['total_request'] = self.runner_data.get('total_request', 0) + 1
+                self.save_runner_data()
+        except Exception as e:
+            print(f"Request error: {e}")
+            request_status = "Failed"
+        
+        # Record the request
+        self.add_request_record(request_status, response_code)
         return response
 
     def roblox_monitoring_job(self):
@@ -138,7 +176,7 @@ class Runner:
             username = self.runner_data['usernameID']
             roblox_url = f"https://api.vaul3t.org/v1/osint/roblox?username={username}&cache=false"
             response = self.make_request_with_proxy(roblox_url)
-            if response.status_code == 200:
+            if response and response.status_code == 200:
                 current_data = response.json()
                 if 'cache' in self.runner_data:
                     changes = self.compare_responses(self.runner_data['cache'], current_data)
@@ -149,7 +187,7 @@ class Runner:
                 if 'user_id' in current_data:
                     avatar_url = f"https://avatar.roblox.com/v1/users/{current_data['user_id']}/avatar"
                     avatar_response = self.make_request_with_proxy(avatar_url)
-                    if avatar_response.status_code == 200:
+                    if avatar_response and avatar_response.status_code == 200:
                         avatar_data = avatar_response.json()
                         if 'avatar_cache' in self.runner_data:
                             avatar_changes = self.compare_responses(self.runner_data['avatar_cache'], avatar_data)
