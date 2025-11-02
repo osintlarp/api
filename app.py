@@ -15,12 +15,14 @@ import hashlib
 import os
 import random
 import string
+import subprocess
+import threading
 
 app = Flask(__name__)
 BYPASS_TOKEN = "BOT-QWPPXCYNNMJUWGAG-X"
 USER_DIR = "/var/www/users"
+RUNNERS_DIR = "/var/www/runners"
 RUNNER_LIMIT = 1
-
 
 CORS(app)
 
@@ -100,6 +102,13 @@ def generate_runner_id():
 def generate_job_id():
     characters = string.ascii_letters + string.digits
     return ''.join(random.choice(characters) for i in range(24))
+
+def start_runner_process(runner_id):
+    try:
+        subprocess.Popen(['python3', 'runner.py', runner_id])
+        print(f"Started runner process: {runner_id}")
+    except Exception as e:
+        print(f"Error starting runner process: {e}")
 
 @app.route('/v1/osint/roblox')
 @limiter.limit("300/hour")
@@ -296,6 +305,18 @@ def activate_runner():
                 runner['running_since'] = datetime.now().isoformat()
                 runner['status'] = 'Starting'
                 runner_found = True
+                
+                runner_data = runner.copy()
+                runner_data['Changes'] = []
+                runner_data['cache'] = {}
+                runner_data['avatar_cache'] = {}
+                
+                os.makedirs(RUNNERS_DIR, exist_ok=True)
+                runner_file = os.path.join(RUNNERS_DIR, f"{runner_id}.json")
+                with open(runner_file, 'w') as f:
+                    json.dump(runner_data, f, indent=4)
+                
+                threading.Thread(target=start_runner_process, args=(runner_id,)).start()
                 break
         
         if not runner_found:
@@ -361,8 +382,81 @@ def request_runner():
             'message': 'Internal server error'
         }), 500
 
+@app.route('/v1/runner/delete_runner', methods=['DELETE'])
+def delete_runner():
+    try:
+        user_id = request.args.get('userID')
+        session_token = request.args.get('sessionToken')
+        runner_id = request.args.get('runnerID')
+        
+        if not user_id or not session_token or not runner_id:
+            return jsonify({
+                'success': False,
+                'message': 'Missing userID, sessionToken, or runnerID'
+            }), 400
+        
+        if not validate_session(user_id, session_token):
+            return jsonify({
+                'success': False,
+                'message': 'Invalid session token'
+            }), 401
+        
+        user_data = load_user_data(user_id)
+        if not user_data:
+            return jsonify({
+                'success': False,
+                'message': 'User not found'
+            }), 404
+        
+        runners = user_data.get('runners', [])
+        initial_length = len(runners)
+        user_data['runners'] = [runner for runner in runners if runner.get('runnerID') != runner_id]
+        
+        if len(user_data['runners']) == initial_length:
+            return jsonify({
+                'success': False,
+                'message': 'Runner not found'
+            }), 404
+        
+        runner_file = os.path.join(RUNNERS_DIR, f"{runner_id}.json")
+        if os.path.exists(runner_file):
+            os.remove(runner_file)
+        
+        if not save_user_data(user_id, user_data):
+            return jsonify({
+                'success': False,
+                'message': 'Failed to save user data'
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'message': 'Runner deleted successfully'
+        })
+        
+    except Exception as e:
+        print(f"Error deleting runner: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Internal server error'
+        }), 500
+
+@app.route('/runner_data/<runner_id>')
+def get_runner_data(runner_id):
+    try:
+        runner_file = os.path.join(RUNNERS_DIR, f"{runner_id}.json")
+        if os.path.exists(runner_file):
+            with open(runner_file, 'r') as f:
+                return jsonify(json.load(f))
+        else:
+            return jsonify({'error': 'Runner not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     utils.load_proxies()
+    os.makedirs(USER_DIR, exist_ok=True)
+    os.makedirs(RUNNERS_DIR, exist_ok=True)
+    
+    subprocess.Popen(['python3', 'runner.py'])
+    
     app.run(debug=True, port=5000)
-
