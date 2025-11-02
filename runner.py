@@ -28,6 +28,25 @@ class Runner:
         with open(self.runner_file, 'w') as f:
             json.dump(self.runner_data, f, indent=4)
 
+        # Aktualisiere die User-JSON
+        user_file = os.path.join("/var/www/users", f"{self.runner_data['userID']}.json")
+        if os.path.exists(user_file):
+            with open(user_file, 'r') as f:
+                user_data = json.load(f)
+
+            # Finde den Runner in der User-JSON und aktualisiere ihn
+            for runner in user_data.get('runners', []):
+                if runner['runnerID'] == self.runner_id:
+                    # Aktualisiere alle Felder, die sich geändert haben könnten
+                    runner['status'] = self.runner_data['status']
+                    runner['total_request'] = self.runner_data.get('total_request', 0)
+                    runner['last_request'] = self.runner_data.get('last_request')
+                    runner['running_since'] = self.runner_data.get('running_since')
+                    break
+
+            with open(user_file, 'w') as f:
+                json.dump(user_data, f, indent=4)
+
     def load_proxies(self):
         if os.path.exists(PROXIES_FILE):
             with open(PROXIES_FILE, 'r') as f:
@@ -56,16 +75,6 @@ class Runner:
     def update_status(self, status):
         self.runner_data['status'] = status
         self.save_runner_data()
-        user_file = os.path.join("/var/www/users", f"{self.runner_data['userID']}.json")
-        if os.path.exists(user_file):
-            with open(user_file, 'r') as f:
-                user_data = json.load(f)
-            for runner in user_data.get('runners', []):
-                if runner['runnerID'] == self.runner_id:
-                    runner['status'] = status
-                    break
-            with open(user_file, 'w') as f:
-                json.dump(user_data, f, indent=4)
 
     def add_change(self, change):
         if 'Changes' not in self.runner_data:
