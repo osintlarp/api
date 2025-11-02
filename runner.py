@@ -19,6 +19,7 @@ class Runner:
         self.proxies = self.load_proxies()
         self.current_proxy = None
         self.running = True
+        self.first_run = True
 
     def load_runner_data(self):
         with open(self.runner_file, 'r') as f:
@@ -97,26 +98,28 @@ class Runner:
 
     def compare_roblox_responses(self, old_response, new_response):
         changes = []
-        if old_response.get('display_name') != new_response.get('display_name'):
+        if old_response.get('display_name') is not None and old_response.get('display_name') != new_response.get('display_name'):
             changes.append(f"display_name changed to '{new_response.get('display_name')}' (was '{old_response.get('display_name')}')")
-        if old_response.get('description') != new_response.get('description'):
+        if old_response.get('description') is not None and old_response.get('description') != new_response.get('description'):
             changes.append(f"description changed to '{new_response.get('description')}' (was '{old_response.get('description')}')")
-        if old_response.get('following') != new_response.get('following'):
+        if old_response.get('following') is not None and old_response.get('following') != new_response.get('following'):
             changes.append(f"following changed to {new_response.get('following')} (was {old_response.get('following')})")
-        if old_response.get('friends') != new_response.get('friends'):
+        if old_response.get('friends') is not None and old_response.get('friends') != new_response.get('friends'):
             changes.append(f"friends changed to {new_response.get('friends')} (was {old_response.get('friends')})")
-        old_groups = set([group['name'] for group in old_response.get('groups', [])])
-        new_groups = set([group['name'] for group in new_response.get('groups', [])])
-        if old_groups != new_groups:
+        
+        old_groups = set([group['name'] for group in old_response.get('groups', [])]) if old_response.get('groups') else set()
+        new_groups = set([group['name'] for group in new_response.get('groups', [])]) if new_response.get('groups') else set()
+        if old_groups and old_groups != new_groups:
             added = new_groups - old_groups
             removed = old_groups - new_groups
             if added:
                 changes.append(f"groups added: {', '.join(added)}")
             if removed:
                 changes.append(f"groups removed: {', '.join(removed)}")
-        old_badges = set(old_response.get('roblox_badges', []))
-        new_badges = set(new_response.get('roblox_badges', []))
-        if old_badges != new_badges:
+        
+        old_badges = set(old_response.get('roblox_badges', [])) if old_response.get('roblox_badges') else set()
+        new_badges = set(new_response.get('roblox_badges', [])) if new_response.get('roblox_badges') else set()
+        if old_badges and old_badges != new_badges:
             added = new_badges - old_badges
             removed = old_badges - new_badges
             if added:
@@ -127,41 +130,41 @@ class Runner:
 
     def compare_tiktok_responses(self, old_response, new_response):
         changes = []
-        if old_response.get('DisplayName') != new_response.get('DisplayName'):
+        if old_response.get('DisplayName') is not None and old_response.get('DisplayName') != new_response.get('DisplayName'):
             changes.append(f"DisplayName changed to '{new_response.get('DisplayName')}' (was '{old_response.get('DisplayName')}')")
-        if old_response.get('Bio') != new_response.get('Bio'):
+        if old_response.get('Bio') is not None and old_response.get('Bio') != new_response.get('Bio'):
             changes.append(f"Bio changed to '{new_response.get('Bio')}' (was '{old_response.get('Bio')}')")
-        if old_response.get('BioLink') != new_response.get('BioLink'):
+        if old_response.get('BioLink') is not None and old_response.get('BioLink') != new_response.get('BioLink'):
             changes.append(f"BioLink changed to '{new_response.get('BioLink')}' (was '{old_response.get('BioLink')}')")
-        if old_response.get('Country') != new_response.get('Country'):
+        if old_response.get('Country') is not None and old_response.get('Country') != new_response.get('Country'):
             changes.append(f"Country changed to '{new_response.get('Country')}' (was '{old_response.get('Country')}')")
-        if old_response.get('Language') != new_response.get('Language'):
+        if old_response.get('Language') is not None and old_response.get('Language') != new_response.get('Language'):
             changes.append(f"Language changed to '{new_response.get('Language')}' (was '{old_response.get('Language')}')")
-        if old_response.get('Followers') != new_response.get('Followers'):
+        if old_response.get('Followers') is not None and old_response.get('Followers') != new_response.get('Followers'):
             changes.append(f"Followers changed to {new_response.get('Followers')} (was {old_response.get('Followers')})")
-        if old_response.get('Following') != new_response.get('Following'):
+        if old_response.get('Following') is not None and old_response.get('Following') != new_response.get('Following'):
             changes.append(f"Following changed to {new_response.get('Following')} (was {old_response.get('Following')})")
-        if old_response.get('Friends') != new_response.get('Friends'):
+        if old_response.get('Friends') is not None and old_response.get('Friends') != new_response.get('Friends'):
             changes.append(f"Friends changed to {new_response.get('Friends')} (was {old_response.get('Friends')})")
-        if old_response.get('Likes') != new_response.get('Likes'):
+        if old_response.get('Likes') is not None and old_response.get('Likes') != new_response.get('Likes'):
             changes.append(f"Likes changed to {new_response.get('Likes')} (was {old_response.get('Likes')})")
-        if old_response.get('Videos') != new_response.get('Videos'):
+        if old_response.get('Videos') is not None and old_response.get('Videos') != new_response.get('Videos'):
             changes.append(f"Videos changed to {new_response.get('Videos')} (was {old_response.get('Videos')})")
-        if old_response.get('Private') != new_response.get('Private'):
+        if old_response.get('Private') is not None and old_response.get('Private') != new_response.get('Private'):
             old_priv = "Private" if old_response.get('Private') else "Public"
             new_priv = "Private" if new_response.get('Private') else "Public"
             changes.append(f"Account changed from {old_priv} to {new_priv}")
-        if old_response.get('Verified') != new_response.get('Verified'):
+        if old_response.get('Verified') is not None and old_response.get('Verified') != new_response.get('Verified'):
             old_ver = "Verified" if old_response.get('Verified') else "Not Verified"
             new_ver = "Verified" if new_response.get('Verified') else "Not Verified"
             changes.append(f"Verification status changed from {old_ver} to {new_ver}")
-        if old_response.get('NewAccount') != new_response.get('NewAccount'):
+        if old_response.get('NewAccount') is not None and old_response.get('NewAccount') != new_response.get('NewAccount'):
             old_new = "New Account" if old_response.get('NewAccount') else "Not New Account"
             new_new = "New Account" if new_response.get('NewAccount') else "Not New Account"
             changes.append(f"Account status changed from {old_new} to {new_new}")
-        if old_response.get('NameUpdated') != new_response.get('NameUpdated'):
+        if old_response.get('NameUpdated') is not None and old_response.get('NameUpdated') != new_response.get('NameUpdated'):
             changes.append(f"NameUpdated changed to '{new_response.get('NameUpdated')}' (was '{old_response.get('NameUpdated')}')")
-        if old_response.get('UsernameUpdated') != new_response.get('UsernameUpdated'):
+        if old_response.get('UsernameUpdated') is not None and old_response.get('UsernameUpdated') != new_response.get('UsernameUpdated'):
             changes.append(f"UsernameUpdated changed to '{new_response.get('UsernameUpdated')}' (was '{old_response.get('UsernameUpdated')}')")
         return changes
 
@@ -210,7 +213,7 @@ class Runner:
             response = self.make_request_with_proxy(roblox_url)
             if response and response.status_code == 200:
                 current_data = response.json()
-                if 'cache' in self.runner_data:
+                if 'cache' in self.runner_data and not self.first_run:
                     changes = self.compare_roblox_responses(self.runner_data['cache'], current_data)
                     for change in changes:
                         self.add_change(change)
@@ -221,17 +224,19 @@ class Runner:
                     avatar_response = self.make_request_with_proxy(avatar_url)
                     if avatar_response and avatar_response.status_code == 200:
                         avatar_data = avatar_response.json()
-                        if 'avatar_cache' in self.runner_data:
+                        if 'avatar_cache' in self.runner_data and not self.first_run:
                             avatar_changes = self.compare_roblox_responses(self.runner_data['avatar_cache'], avatar_data)
                             for change in avatar_changes:
                                 self.add_change(f"Avatar: {change}")
                         self.runner_data['avatar_cache'] = avatar_data
                         self.save_runner_data()
             self.update_status('Active')
+            self.first_run = False
         except Exception as e:
             print(f"Error in Roblox monitoring: {e}")
             self.add_change(f"Error: {str(e)}")
             self.update_status('Error')
+            self.first_run = False
 
     def tiktok_monitoring_job(self):
         try:
@@ -241,7 +246,7 @@ class Runner:
             response = self.make_request_with_proxy(tiktok_url)
             if response and response.status_code == 200:
                 current_data = response.json()
-                if 'cache' in self.runner_data:
+                if 'cache' in self.runner_data and not self.first_run:
                     changes = self.compare_tiktok_responses(self.runner_data['cache'], current_data)
                     for change in changes:
                         self.add_change(change)
@@ -250,10 +255,12 @@ class Runner:
             elif response and response.status_code != 200:
                 self.add_change(f"TikTok API returned status code: {response.status_code}")
             self.update_status('Active')
+            self.first_run = False
         except Exception as e:
             print(f"Error in TikTok monitoring: {e}")
             self.add_change(f"Error: {str(e)}")
             self.update_status('Error')
+            self.first_run = False
 
     def start_scheduler(self):
         interval = int(self.runner_data['request_every'])
