@@ -6,14 +6,19 @@ from flask_cors import CORS
 from functools import wraps
 from tiktok import get_tiktok_data
 from instagram import fetch_instagram_data
+from datetime import datetime
 import json
 import roblox
 import github  
 import utils
 import hashlib
+import os
+import random
+import string
 
 app = Flask(__name__)
 BYPASS_TOKEN = "BOT-QWPPXCYNNMJUWGAG-X"
+USER_DIR = "/var/www/users"
 
 CORS(app)
 
@@ -46,6 +51,53 @@ def load_endpoints():
 def load_announcements():
     with open('announcements.json', 'r') as f:
         return json.load(f)
+
+def validate_session(user_id, session_token):
+    try:
+        user_file = os.path.join(USER_DIR, f"{user_id}.json")
+        if not os.path.exists(user_file):
+            return False
+        
+        with open(user_file, 'r') as f:
+            user_data = json.load(f)
+        
+        return user_data.get('session_token') == session_token
+    except Exception as e:
+        print(f"Error validating session: {e}")
+        return False
+
+def load_user_data(user_id):
+    try:
+        user_file = os.path.join(USER_DIR, f"{user_id}.json")
+        if not os.path.exists(user_file):
+            return None
+        
+        with open(user_file, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error loading user data: {e}")
+        return None
+
+def save_user_data(user_id, user_data):
+    try:
+        user_file = os.path.join(USER_DIR, f"{user_id}.json")
+        with open(user_file, 'w') as f:
+            json.dump(user_data, f, indent=4)
+        return True
+    except Exception as e:
+        print(f"Error saving user data: {e}")
+        return False
+
+def generate_runner_name():
+    letters = string.ascii_lowercase
+    return ''.join(random.choice(letters) for i in range(8))
+
+def generate_runner_id():
+    return ''.join(random.choice(string.digits) for i in range(30))
+
+def generate_job_id():
+    characters = string.ascii_letters + string.digits
+    return ''.join(random.choice(characters) for i in range(24))
 
 @app.route('/v1/osint/roblox')
 @limiter.limit("300/hour")
@@ -132,6 +184,223 @@ def api_endpoints():
 def announcements():
     data = load_announcements()
     return jsonify(data)
+
+@app.route('/v1/runner/create_runner', methods=['GET'])
+def create_runner():
+    try:
+        user_id = request.args.get('userID')
+        session_token = request.args.get('sessionToken')
+        
+        if not user_id or not session_token:
+            return jsonify({
+                'success': False,
+                'message': 'Missing userID or sessionToken'
+            }), 400
+        
+        if not validate_session(user_id, session_token):
+            return jsonify({
+                'success': False,
+                'message': 'Invalid session token'
+            }), 401
+        
+        user_data = load_user_data(user_id)
+        if not user_data:
+            return jsonify({
+                'success': False,
+                'message': 'User not found'
+            }), 404
+        
+        runner_data = {
+            'runnerName': generate_runner_name(),
+            'runnerID': generate_runner_id(),
+            'jobID': generate_job_id(),
+            'userID': user_id,
+            'serviceID': '',
+            'running_since': '',
+            'service': '',
+            'usernameID': '',
+            'creationDATE': datetime.now().isoformat(),
+            'status': 'pending'
+        }
+        
+        if 'runners' not in user_data:
+            user_data['runners'] = []
+        
+        user_data['runners'].append(runner_data)
+        
+        if not save_user_data(user_id, user_data):
+            return jsonify({
+                'success': False,
+                'message': 'Failed to save user data'
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'message': 'Runner created successfully',
+            'runner': runner_data
+        })
+        
+    except Exception as e:
+        print(f"Error creating runner: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Internal server error'
+        }), 500
+        
+@app.route('/v1/runner/request_runner', methods=['GET'])
+def request_runner():
+    try:
+        user_id = request.args.get('userID')
+        session_token = request.args.get('sessionToken')
+        
+        if not user_id or not session_token:
+            return jsonify({
+                'success': False,
+                'message': 'Missing userID or sessionToken'
+            }), 400
+        
+        if not validate_session(user_id, session_token):
+            return jsonify({
+                'success': False,
+                'message': 'Invalid session token'
+            }), 401
+        
+        user_data = load_user_data(user_id)
+        if not user_data:
+            return jsonify({
+                'success': False,
+                'message': 'User not found'
+            }), 404
+        
+        runners = user_data.get('runners', [])
+        
+        return jsonify({
+            'success': True,
+            'runners': runners
+        })
+        
+    except Exception as e:
+        print(f"Error requesting runners: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Internal server error'
+        }), 500
+
+@app.route('/v1/runner/delete_runner', methods=['DELETE'])
+def delete_runner():
+    try:
+        user_id = request.args.get('userID')
+        session_token = request.args.get('sessionToken')
+        runner_id = request.args.get('runnerID')
+        
+        if not user_id or not session_token or not runner_id:
+            return jsonify({
+                'success': False,
+                'message': 'Missing userID, sessionToken, or runnerID'
+            }), 400
+        
+        if not validate_session(user_id, session_token):
+            return jsonify({
+                'success': False,
+                'message': 'Invalid session token'
+            }), 401
+        
+        user_data = load_user_data(user_id)
+        if not user_data:
+            return jsonify({
+                'success': False,
+                'message': 'User not found'
+            }), 404
+        
+        runners = user_data.get('runners', [])
+        initial_length = len(runners)
+        user_data['runners'] = [runner for runner in runners if runner.get('runnerID') != runner_id]
+        
+        if len(user_data['runners']) == initial_length:
+            return jsonify({
+                'success': False,
+                'message': 'Runner not found'
+            }), 404
+        
+        if not save_user_data(user_id, user_data):
+            return jsonify({
+                'success': False,
+                'message': 'Failed to save user data'
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'message': 'Runner deleted successfully'
+        })
+        
+    except Exception as e:
+        print(f"Error deleting runner: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Internal server error'
+        }), 500
+
+@app.route('/v1/runner/update_service', methods=['POST'])
+def update_service():
+    try:
+        user_id = request.args.get('userID')
+        session_token = request.args.get('sessionToken')
+        runner_id = request.args.get('runnerID')
+        service_id = request.args.get('serviceID')
+        
+        if not user_id or not session_token or not runner_id or not service_id:
+            return jsonify({
+                'success': False,
+                'message': 'Missing required parameters'
+            }), 400
+        
+        if not validate_session(user_id, session_token):
+            return jsonify({
+                'success': False,
+                'message': 'Invalid session token'
+            }), 401
+        
+        user_data = load_user_data(user_id)
+        if not user_data:
+            return jsonify({
+                'success': False,
+                'message': 'User not found'
+            }), 404
+        
+        runners = user_data.get('runners', [])
+        runner_found = False
+        
+        for runner in runners:
+            if runner.get('runnerID') == runner_id:
+                runner['serviceID'] = service_id
+                runner['status'] = 'active'
+                runner_found = True
+                break
+        
+        if not runner_found:
+            return jsonify({
+                'success': False,
+                'message': 'Runner not found'
+            }), 404
+        
+        if not save_user_data(user_id, user_data):
+            return jsonify({
+                'success': False,
+                'message': 'Failed to save user data'
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'message': 'Service ID updated successfully'
+        })
+        
+    except Exception as e:
+        print(f"Error updating service: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Internal server error'
+        }), 500
+
 
 if __name__ == '__main__':
     utils.load_proxies()
