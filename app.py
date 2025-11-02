@@ -22,7 +22,7 @@ app = Flask(__name__)
 BYPASS_TOKEN = "BOT-QWPPXCYNNMJUWGAG-X"
 USER_DIR = "/var/www/users"
 RUNNERS_DIR = "/var/www/runners"
-RUNNER_LIMIT = 1
+RUNNER_LIMIT = 2
 
 CORS(app)
 
