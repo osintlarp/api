@@ -28,21 +28,19 @@ class Runner:
         with open(self.runner_file, 'w') as f:
             json.dump(self.runner_data, f, indent=4)
 
-        # Aktualisiere die User-JSON
         user_file = os.path.join("/var/www/users", f"{self.runner_data['userID']}.json")
         if os.path.exists(user_file):
             with open(user_file, 'r') as f:
                 user_data = json.load(f)
 
-            # Finde den Runner in der User-JSON und aktualisiere ihn
             for runner in user_data.get('runners', []):
                 if runner['runnerID'] == self.runner_id:
-                    # Aktualisiere alle Felder, die sich geändert haben könnten
                     runner['status'] = self.runner_data['status']
                     runner['total_request'] = self.runner_data.get('total_request', 0)
                     runner['last_request'] = self.runner_data.get('last_request')
                     runner['running_since'] = self.runner_data.get('running_since')
                     runner['request_history'] = self.runner_data.get('request_history', [])
+                    runner['Changes'] = self.runner_data.get('Changes', [])
                     break
 
             with open(user_file, 'w') as f:
@@ -78,7 +76,6 @@ class Runner:
         self.save_runner_data()
 
     def add_request_record(self, status, response_code=None):
-        """Add a request record to the history"""
         if 'request_history' not in self.runner_data:
             self.runner_data['request_history'] = []
         
@@ -88,11 +85,7 @@ class Runner:
             'response_code': response_code
         }
         
-        # Keep only the last 1000 records to prevent file from growing too large
         self.runner_data['request_history'].append(record)
-        if len(self.runner_data['request_history']) > 1000:
-            self.runner_data['request_history'] = self.runner_data['request_history'][-1000:]
-        
         self.save_runner_data()
 
     def add_change(self, change):
@@ -102,7 +95,7 @@ class Runner:
         self.runner_data['Changes'].append(f"[{timestamp}] {change}")
         self.save_runner_data()
 
-    def compare_responses(self, old_response, new_response):
+    def compare_roblox_responses(self, old_response, new_response):
         changes = []
         if old_response.get('display_name') != new_response.get('display_name'):
             changes.append(f"display_name changed to '{new_response.get('display_name')}' (was '{old_response.get('display_name')}')")
@@ -130,6 +123,46 @@ class Runner:
                 changes.append(f"badges added: {', '.join(added)}")
             if removed:
                 changes.append(f"badges removed: {', '.join(removed)}")
+        return changes
+
+    def compare_tiktok_responses(self, old_response, new_response):
+        changes = []
+        if old_response.get('DisplayName') != new_response.get('DisplayName'):
+            changes.append(f"DisplayName changed to '{new_response.get('DisplayName')}' (was '{old_response.get('DisplayName')}')")
+        if old_response.get('Bio') != new_response.get('Bio'):
+            changes.append(f"Bio changed to '{new_response.get('Bio')}' (was '{old_response.get('Bio')}')")
+        if old_response.get('BioLink') != new_response.get('BioLink'):
+            changes.append(f"BioLink changed to '{new_response.get('BioLink')}' (was '{old_response.get('BioLink')}')")
+        if old_response.get('Country') != new_response.get('Country'):
+            changes.append(f"Country changed to '{new_response.get('Country')}' (was '{old_response.get('Country')}')")
+        if old_response.get('Language') != new_response.get('Language'):
+            changes.append(f"Language changed to '{new_response.get('Language')}' (was '{old_response.get('Language')}')")
+        if old_response.get('Followers') != new_response.get('Followers'):
+            changes.append(f"Followers changed to {new_response.get('Followers')} (was {old_response.get('Followers')})")
+        if old_response.get('Following') != new_response.get('Following'):
+            changes.append(f"Following changed to {new_response.get('Following')} (was {old_response.get('Following')})")
+        if old_response.get('Friends') != new_response.get('Friends'):
+            changes.append(f"Friends changed to {new_response.get('Friends')} (was {old_response.get('Friends')})")
+        if old_response.get('Likes') != new_response.get('Likes'):
+            changes.append(f"Likes changed to {new_response.get('Likes')} (was {old_response.get('Likes')})")
+        if old_response.get('Videos') != new_response.get('Videos'):
+            changes.append(f"Videos changed to {new_response.get('Videos')} (was {old_response.get('Videos')})")
+        if old_response.get('Private') != new_response.get('Private'):
+            old_priv = "Private" if old_response.get('Private') else "Public"
+            new_priv = "Private" if new_response.get('Private') else "Public"
+            changes.append(f"Account changed from {old_priv} to {new_priv}")
+        if old_response.get('Verified') != new_response.get('Verified'):
+            old_ver = "Verified" if old_response.get('Verified') else "Not Verified"
+            new_ver = "Verified" if new_response.get('Verified') else "Not Verified"
+            changes.append(f"Verification status changed from {old_ver} to {new_ver}")
+        if old_response.get('NewAccount') != new_response.get('NewAccount'):
+            old_new = "New Account" if old_response.get('NewAccount') else "Not New Account"
+            new_new = "New Account" if new_response.get('NewAccount') else "Not New Account"
+            changes.append(f"Account status changed from {old_new} to {new_new}")
+        if old_response.get('NameUpdated') != new_response.get('NameUpdated'):
+            changes.append(f"NameUpdated changed to '{new_response.get('NameUpdated')}' (was '{old_response.get('NameUpdated')}')")
+        if old_response.get('UsernameUpdated') != new_response.get('UsernameUpdated'):
+            changes.append(f"UsernameUpdated changed to '{new_response.get('UsernameUpdated')}' (was '{old_response.get('UsernameUpdated')}')")
         return changes
 
     def make_request_with_proxy(self, url):
@@ -167,7 +200,6 @@ class Runner:
             print(f"Request error: {e}")
             request_status = "Failed"
         
-        # Record the request
         self.add_request_record(request_status, response_code)
         return response
 
@@ -179,7 +211,7 @@ class Runner:
             if response and response.status_code == 200:
                 current_data = response.json()
                 if 'cache' in self.runner_data:
-                    changes = self.compare_responses(self.runner_data['cache'], current_data)
+                    changes = self.compare_roblox_responses(self.runner_data['cache'], current_data)
                     for change in changes:
                         self.add_change(change)
                 self.runner_data['cache'] = current_data
@@ -190,7 +222,7 @@ class Runner:
                     if avatar_response and avatar_response.status_code == 200:
                         avatar_data = avatar_response.json()
                         if 'avatar_cache' in self.runner_data:
-                            avatar_changes = self.compare_responses(self.runner_data['avatar_cache'], avatar_data)
+                            avatar_changes = self.compare_roblox_responses(self.runner_data['avatar_cache'], avatar_data)
                             for change in avatar_changes:
                                 self.add_change(f"Avatar: {change}")
                         self.runner_data['avatar_cache'] = avatar_data
@@ -201,10 +233,34 @@ class Runner:
             self.add_change(f"Error: {str(e)}")
             self.update_status('Error')
 
+    def tiktok_monitoring_job(self):
+        try:
+            username = self.runner_data['usernameID']
+            clean_username = username.replace('@', '')
+            tiktok_url = f"https://api.vaul3t.org/v1/osint/tiktok?username={clean_username}&cache=false"
+            response = self.make_request_with_proxy(tiktok_url)
+            if response and response.status_code == 200:
+                current_data = response.json()
+                if 'cache' in self.runner_data:
+                    changes = self.compare_tiktok_responses(self.runner_data['cache'], current_data)
+                    for change in changes:
+                        self.add_change(change)
+                self.runner_data['cache'] = current_data
+                self.save_runner_data()
+            elif response and response.status_code != 200:
+                self.add_change(f"TikTok API returned status code: {response.status_code}")
+            self.update_status('Active')
+        except Exception as e:
+            print(f"Error in TikTok monitoring: {e}")
+            self.add_change(f"Error: {str(e)}")
+            self.update_status('Error')
+
     def start_scheduler(self):
         interval = int(self.runner_data['request_every'])
         if self.runner_data['service'] == 'Roblox':
             schedule.every(interval).minutes.do(self.roblox_monitoring_job)
+        elif self.runner_data['service'] == 'TikTok':
+            schedule.every(interval).minutes.do(self.tiktok_monitoring_job)
         self.current_proxy = self.find_working_proxy()
         self.update_status('Active')
         while self.running:
