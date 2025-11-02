@@ -228,9 +228,10 @@ def create_runner():
                 'message': f'Runner limit reached. Maximum {RUNNER_LIMIT} runner(s) allowed.'
             }), 400
         
+        runner_id = generate_runner_id()
         runner_data = {
             'runnerName': generate_runner_name(),
-            'runnerID': generate_runner_id(),
+            'runnerID': runner_id,
             'jobID': generate_job_id(),
             'userID': user_id,
             'serviceID': '',
@@ -238,19 +239,26 @@ def create_runner():
             'service': '',
             'usernameID': '',
             'creationDATE': datetime.now().isoformat(),
-            'status': 'pending'
+            'status': 'pending',
+            'total_request': 0,
+            'last_request': None
         }
-        
+
         if 'runners' not in user_data:
             user_data['runners'] = []
-        
+
         user_data['runners'].append(runner_data)
-        
+
         if not save_user_data(user_id, user_data):
             return jsonify({
                 'success': False,
                 'message': 'Failed to save user data'
             }), 500
+        
+        runner_file_path = os.path.join('/var/www/runners', f"{runner_id}.json")
+        os.makedirs('/var/www/runners', exist_ok=True)
+        with open(runner_file_path, 'w') as f:
+            json.dump(runner_data, f, indent=4)
         
         return jsonify({
             'success': True,
@@ -264,6 +272,7 @@ def create_runner():
             'success': False,
             'message': 'Internal server error'
         }), 500
+
 
 @app.route('/v1/runner/activate_runner', methods=['POST'])
 def activate_runner():
