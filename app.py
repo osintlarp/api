@@ -461,6 +461,61 @@ def get_runner_data(runner_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/v1/users', methods=['GET'])
+@limiter.limit("300/hour")
+def get_user_data():
+    session_token = request.args.get('sessionToken')
+    if not session_token:
+        return jsonify({'error': 'Missing sessionToken parameter'}), 400
+
+    try:
+        user_files = [f for f in os.listdir(USER_DIR) if f.endswith('.json')]
+        user_data = None
+        
+        for user_file in user_files:
+            file_path = os.path.join(USER_DIR, user_file)
+            with open(file_path, 'r') as f:
+                current_user_data = json.load(f)
+                if current_user_data.get('session_token') == session_token:
+                    user_data = current_user_data
+                    break
+        
+        if not user_data:
+            return jsonify({'error': 'Invalid session token'}), 401
+
+        total_requests = 0
+        total_minutes = 0
+        
+        if 'runners' in user_data:
+            for runner in user_data['runners']:
+                total_requests += runner.get('total_request', 0)
+                
+                if runner.get('running_since'):
+                    try:
+                        running_since = datetime.fromisoformat(runner['running_since'])
+                        now = datetime.now()
+                        running_minutes = (now - running_since).total_seconds() / 60
+                        total_minutes += running_minutes
+                    except (ValueError, KeyError):
+                        pass
+
+        response_data = {
+            'userID': user_data.get('userID'),
+            'username': user_data.get('username'),
+            'api_key': user_data.get('api_key'),
+            'runners': user_data.get('runners', []),
+            'total_stats': {
+                'total_requests': total_requests,
+                'total_minutes': round(total_minutes)
+            }
+        }
+
+        return jsonify(response_data)
+
+    except Exception as e:
+        print(f"Error in user data endpoint: {e}")
+        return jsonify({'error': 'An internal server error occurred'}), 500
+
 if __name__ == '__main__':
     utils.load_proxies()
     os.makedirs(USER_DIR, exist_ok=True)
