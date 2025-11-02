@@ -19,6 +19,8 @@ import string
 app = Flask(__name__)
 BYPASS_TOKEN = "BOT-QWPPXCYNNMJUWGAG-X"
 USER_DIR = "/var/www/users"
+RUNNER_LIMIT = 1
+
 
 CORS(app)
 
@@ -210,6 +212,13 @@ def create_runner():
                 'message': 'User not found'
             }), 404
         
+        runners = user_data.get('runners', [])
+        if len(runners) >= RUNNER_LIMIT:
+            return jsonify({
+                'success': False,
+                'message': f'Runner limit reached. Maximum {RUNNER_LIMIT} runner(s) allowed.'
+            }), 400
+        
         runner_data = {
             'runnerName': generate_runner_name(),
             'runnerID': generate_runner_id(),
@@ -246,7 +255,73 @@ def create_runner():
             'success': False,
             'message': 'Internal server error'
         }), 500
+
+@app.route('/v1/runner/activate_runner', methods=['POST'])
+def activate_runner():
+    try:
+        user_id = request.args.get('userID')
+        session_token = request.args.get('sessionToken')
+        runner_id = request.args.get('runnerID')
+        service = request.args.get('service')
+        username = request.args.get('Username')
+        request_every = request.args.get('RequestEvery')
         
+        if not user_id or not session_token or not runner_id or not service or not username or not request_every:
+            return jsonify({
+                'success': False,
+                'message': 'Missing required parameters'
+            }), 400
+        
+        if not validate_session(user_id, session_token):
+            return jsonify({
+                'success': False,
+                'message': 'Invalid session token'
+            }), 401
+        
+        user_data = load_user_data(user_id)
+        if not user_data:
+            return jsonify({
+                'success': False,
+                'message': 'User not found'
+            }), 404
+        
+        runners = user_data.get('runners', [])
+        runner_found = False
+        
+        for runner in runners:
+            if runner.get('runnerID') == runner_id:
+                runner['service'] = service
+                runner['usernameID'] = username
+                runner['request_every'] = request_every
+                runner['running_since'] = datetime.now().isoformat()
+                runner['status'] = 'Starting'
+                runner_found = True
+                break
+        
+        if not runner_found:
+            return jsonify({
+                'success': False,
+                'message': 'Runner not found'
+            }), 404
+        
+        if not save_user_data(user_id, user_data):
+            return jsonify({
+                'success': False,
+                'message': 'Failed to save user data'
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'message': 'Runner activated successfully'
+        })
+        
+    except Exception as e:
+        print(f"Error activating runner: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Internal server error'
+        }), 500
+
 @app.route('/v1/runner/request_runner', methods=['GET'])
 def request_runner():
     try:
@@ -281,121 +356,6 @@ def request_runner():
         
     except Exception as e:
         print(f"Error requesting runners: {e}")
-        return jsonify({
-            'success': False,
-            'message': 'Internal server error'
-        }), 500
-
-@app.route('/v1/runner/delete_runner', methods=['DELETE'])
-def delete_runner():
-    try:
-        user_id = request.args.get('userID')
-        session_token = request.args.get('sessionToken')
-        runner_id = request.args.get('runnerID')
-        
-        if not user_id or not session_token or not runner_id:
-            return jsonify({
-                'success': False,
-                'message': 'Missing userID, sessionToken, or runnerID'
-            }), 400
-        
-        if not validate_session(user_id, session_token):
-            return jsonify({
-                'success': False,
-                'message': 'Invalid session token'
-            }), 401
-        
-        user_data = load_user_data(user_id)
-        if not user_data:
-            return jsonify({
-                'success': False,
-                'message': 'User not found'
-            }), 404
-        
-        runners = user_data.get('runners', [])
-        initial_length = len(runners)
-        user_data['runners'] = [runner for runner in runners if runner.get('runnerID') != runner_id]
-        
-        if len(user_data['runners']) == initial_length:
-            return jsonify({
-                'success': False,
-                'message': 'Runner not found'
-            }), 404
-        
-        if not save_user_data(user_id, user_data):
-            return jsonify({
-                'success': False,
-                'message': 'Failed to save user data'
-            }), 500
-        
-        return jsonify({
-            'success': True,
-            'message': 'Runner deleted successfully'
-        })
-        
-    except Exception as e:
-        print(f"Error deleting runner: {e}")
-        return jsonify({
-            'success': False,
-            'message': 'Internal server error'
-        }), 500
-
-@app.route('/v1/runner/update_service', methods=['POST'])
-def update_service():
-    try:
-        user_id = request.args.get('userID')
-        session_token = request.args.get('sessionToken')
-        runner_id = request.args.get('runnerID')
-        service_id = request.args.get('serviceID')
-        
-        if not user_id or not session_token or not runner_id or not service_id:
-            return jsonify({
-                'success': False,
-                'message': 'Missing required parameters'
-            }), 400
-        
-        if not validate_session(user_id, session_token):
-            return jsonify({
-                'success': False,
-                'message': 'Invalid session token'
-            }), 401
-        
-        user_data = load_user_data(user_id)
-        if not user_data:
-            return jsonify({
-                'success': False,
-                'message': 'User not found'
-            }), 404
-        
-        runners = user_data.get('runners', [])
-        runner_found = False
-        
-        for runner in runners:
-            if runner.get('runnerID') == runner_id:
-                runner['serviceID'] = service_id
-                runner['status'] = 'active'
-                runner_found = True
-                break
-        
-        if not runner_found:
-            return jsonify({
-                'success': False,
-                'message': 'Runner not found'
-            }), 404
-        
-        if not save_user_data(user_id, user_data):
-            return jsonify({
-                'success': False,
-                'message': 'Failed to save user data'
-            }), 500
-        
-        return jsonify({
-            'success': True,
-            'message': 'Service ID updated successfully'
-        })
-        
-    except Exception as e:
-        print(f"Error updating service: {e}")
         return jsonify({
             'success': False,
             'message': 'Internal server error'
