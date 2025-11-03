@@ -7,9 +7,22 @@ import sys
 from datetime import datetime
 import threading
 import schedule
+import logging
+import traceback
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 RUNNERS_DIR = "/var/www/runners"
 PROXIES_FILE = "proxies.txt"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('runner.log'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 
 class Runner:
     def __init__(self, runner_id):
@@ -20,6 +33,20 @@ class Runner:
         self.current_proxy = None
         self.running = True
         self.first_run = True
+        self.session = self.create_session()
+        self.last_activity = datetime.now()
+
+    def create_session(self):
+        session = requests.Session()
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=10)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        return session
 
     def load_runner_data(self):
         with open(self.runner_file, 'r') as f:
@@ -61,7 +88,7 @@ class Runner:
     def test_proxy(self, proxy):
         try:
             proxies = {'http': f'http://{proxy}', 'https': f'http://{proxy}'}
-            response = requests.get('https://www.google.com', proxies=proxies, timeout=10)
+            response = self.session.get('https://www.google.com', proxies=proxies, timeout=10)
             return response.status_code == 200
         except:
             return False
@@ -177,30 +204,29 @@ class Runner:
             if self.current_proxy:
                 proxies = {'http': f'http://{self.current_proxy}', 'https': f'http://{self.current_proxy}'}
                 try:
-                    response = requests.get(url, proxies=proxies, timeout=30)
+                    response = self.session.get(url, proxies=proxies, timeout=30)
                 except requests.exceptions.RequestException:
                     self.current_proxy = self.find_working_proxy()
                     if self.current_proxy:
                         return self.make_request_with_proxy(url)
                     else:
-                        response = requests.get(url, timeout=30)
+                        response = self.session.get(url, timeout=30)
             else:
-                response = requests.get(url, timeout=30)
+                response = self.session.get(url, timeout=30)
                 
-            if response is not None:
-                response_code = response.status_code
-                if response.status_code == 200:
-                    request_status = "Successful"
-                elif response.status_code == 429:
-                    request_status = "Rate-Limited"
-                else:
-                    request_status = "Failed"
+            response_code = response.status_code
+            if response_code == 200:
+                request_status = "Successful"
+            elif response_code == 429:
+                request_status = "Rate-Limited"
+            else:
+                request_status = "Failed"
                     
-                self.runner_data['last_request'] = datetime.now().isoformat()
-                self.runner_data['total_request'] = self.runner_data.get('total_request', 0) + 1
-                self.save_runner_data()
+            self.runner_data['last_request'] = datetime.now().isoformat()
+            self.runner_data['total_request'] = self.runner_data.get('total_request', 0) + 1
+            self.save_runner_data()
         except Exception as e:
-            print(f"Request error: {e}")
+            logging.error(f"Request error: {e}")
             request_status = "Failed"
         
         self.add_request_record(request_status, response_code)
@@ -208,6 +234,7 @@ class Runner:
 
     def roblox_monitoring_job(self):
         try:
+            self.last_activity = datetime.now()
             username = self.runner_data['usernameID']
             roblox_url = f"https://api.vaul3t.org/v1/osint/roblox?username={username}&cache=false"
             response = self.make_request_with_proxy(roblox_url)
@@ -232,14 +259,17 @@ class Runner:
                         self.save_runner_data()
             self.update_status('Active')
             self.first_run = False
+            logging.info(f"Roblox monitoring completed for {username}")
         except Exception as e:
-            print(f"Error in Roblox monitoring: {e}")
+            logging.error(f"Error in Roblox monitoring: {e}")
+            logging.error(traceback.format_exc())
             self.add_change(f"Error: {str(e)}")
             self.update_status('Error')
             self.first_run = False
 
     def tiktok_monitoring_job(self):
         try:
+            self.last_activity = datetime.now()
             username = self.runner_data['usernameID']
             clean_username = username.replace('@', '')
             tiktok_url = f"https://api.vaul3t.org/v1/osint/tiktok?username={clean_username}&cache=false"
@@ -256,11 +286,22 @@ class Runner:
                 self.add_change(f"TikTok API returned status code: {response.status_code}")
             self.update_status('Active')
             self.first_run = False
+            logging.info(f"TikTok monitoring completed for {username}")
         except Exception as e:
-            print(f"Error in TikTok monitoring: {e}")
+            logging.error(f"Error in TikTok monitoring: {e}")
+            logging.error(traceback.format_exc())
             self.add_change(f"Error: {str(e)}")
             self.update_status('Error')
             self.first_run = False
+
+    def health_check(self):
+        time_since_last = datetime.now() - self.last_activity
+        if time_since_last.total_seconds() > 600:
+            logging.warning(f"Runner {self.runner_id} appears stuck - restarting job")
+            if self.runner_data['service'] == 'Roblox':
+                self.roblox_monitoring_job()
+            elif self.runner_data['service'] == 'TikTok':
+                self.tiktok_monitoring_job()
 
     def start_scheduler(self):
         interval = int(self.runner_data['request_every'])
@@ -268,15 +309,29 @@ class Runner:
             schedule.every(interval).minutes.do(self.roblox_monitoring_job)
         elif self.runner_data['service'] == 'TikTok':
             schedule.every(interval).minutes.do(self.tiktok_monitoring_job)
+        
+        schedule.every(10).minutes.do(self.health_check)
+        
         self.current_proxy = self.find_working_proxy()
         self.update_status('Active')
+        logging.info(f"Started {self.runner_data['service']} runner for {self.runner_data['usernameID']} every {interval} minutes")
+        
         while self.running:
-            schedule.run_pending()
-            time.sleep(1)
+            try:
+                schedule.run_pending()
+                time.sleep(1)
+            except Exception as e:
+                logging.error(f"Scheduler error: {e}")
+                logging.error(traceback.format_exc())
+                time.sleep(60)
 
 def start_runner(runner_id):
-    runner = Runner(runner_id)
-    runner.start_scheduler()
+    try:
+        runner = Runner(runner_id)
+        runner.start_scheduler()
+    except Exception as e:
+        logging.error(f"Failed to start runner {runner_id}: {e}")
+        logging.error(traceback.format_exc())
 
 def load_all_runners():
     if not os.path.exists(RUNNERS_DIR):
@@ -301,11 +356,15 @@ def main():
             thread.daemon = True
             thread.start()
             threads.append(thread)
+            logging.info(f"Started runner thread for {runner_id}")
+        
         try:
             while True:
                 time.sleep(60)
         except KeyboardInterrupt:
-            pass
+            logging.info("Shutting down runners...")
+            for thread in threads:
+                thread.join(timeout=5)
 
 if __name__ == "__main__":
     main()
