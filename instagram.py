@@ -23,7 +23,7 @@ def fetch_instagram_data(username):
 
     cache_file = os.path.join(CACHE_FOLDER_OS, f"{username}.json")
 
-    url = "https://instagram.sujrb.workers.dev/api"
+    url = "https://instagram.sujrb.workers.dev"
     params = {"username": username}
 
     r, err = try_request("get", url, params=params)
