@@ -198,45 +198,10 @@ def get_user_data():
         if not user_data:
             return jsonify({'error': 'Invalid session token'}), 401
 
-        total_requests = 0
-        total_minutes = 0
-
-        updated_runners = []
-        if 'runners' in user_data:
-            for runner in user_data['runners']:
-                runner_id = runner.get('runnerID')
-                runner_file = os.path.join(RUNNERS_DIR, f"{runner_id}.json")
-
-                if os.path.exists(runner_file):
-                    try:
-                        with open(runner_file, 'r') as rf:
-                            runner_data = json.load(rf)
-                            runner.update(runner_data)
-                    except Exception as e:
-                        print(f"Error reading runner file {runner_file}: {e}")
-
-                total_requests += runner.get('total_request', 0)
-
-                if runner.get('running_since'):
-                    try:
-                        running_since = datetime.fromisoformat(runner['running_since'])
-                        now = datetime.now()
-                        running_minutes = (now - running_since).total_seconds() / 60
-                        total_minutes += running_minutes
-                    except (ValueError, KeyError):
-                        pass
-
-                updated_runners.append(runner)
-
         response_data = {
             'userID': user_data.get('userID'),
             'username': user_data.get('username'),
-            'api_key': user_data.get('api_key'),
-            'runners': updated_runners,
-            'total_stats': {
-                'total_requests': total_requests,
-                'total_minutes': round(total_minutes)
-            }
+            'api_key': user_data.get('api_key')
         }
 
         return jsonify(response_data)
