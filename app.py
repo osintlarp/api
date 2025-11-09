@@ -139,15 +139,37 @@ def requireAPI(f):
         if not token:
             return jsonify({"error": "Missing Authorization header"}), 401
 
-        user_path = os.path.join("_internal", "users", f"{token}.json")
-        if not os.path.exists(user_path):
+        if not os.path.exists(MAP_FILE):
+            return jsonify({"error": "User map not found"}), 500
+
+        with open(MAP_FILE, "r") as f:
+            try:
+                user_map = json.load(f)
+            except Exception:
+                return jsonify({"error": "Failed to read user map"}), 500
+
+        matched_user = None
+        for user_entry in user_map.values():
+            if user_entry.get("api_key") == token:
+                matched_user = user_entry
+                break
+
+        if not matched_user:
             return jsonify({"error": "Invalid API key"}), 403
 
-        try:
-            with open(user_path, "r") as f_json:
-                user_data = json.load(f_json)
-        except Exception:
-            return jsonify({"error": "Failed to read user data"}), 500
+        filename = matched_user.get("filename")
+        if not filename:
+            return jsonify({"error": "User file not defined"}), 500
+
+        user_file = os.path.join(USER_DIR, filename)
+        if not os.path.exists(user_file):
+            return jsonify({"error": "User file not found"}), 404
+
+        with open(user_file, "r") as f:
+            try:
+                user_data = json.load(f)
+            except Exception:
+                return jsonify({"error": "Failed to read user data"}), 500
 
         if user_data.get("isBanned", False):
             return jsonify({"error": "User is banned"}), 403
@@ -172,8 +194,8 @@ def requireAPI(f):
             return jsonify({"error": "API limit reached"}), 429
 
         user_data["TokenUsage"] = usage + 1
-        with open(user_path, "w") as f_json:
-            json.dump(user_data, f_json, indent=4)
+        with open(user_file, "w") as f:
+            json.dump(user_data, f, indent=4)
 
         return f(*args, **kwargs)
     return wrapper
