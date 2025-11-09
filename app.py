@@ -21,6 +21,14 @@ import threading
 app = Flask(__name__)
 BYPASS_TOKEN = "BOT-QWPPXCYNNMJUWGAG-X"
 USER_DIR = "/var/www/users"
+MAP_DIR = os.path.join(os.path.expanduser("~"), "map")
+MAP_FILE = os.path.join(MAP_DIR, "user_map.json")
+
+API_LIMIT_ACCOUNT_FREE = 200
+API_LIMIT_ACCOUNT_VIP = 800
+API_LIMIT_ACCOUNT_LARP = 1500
+API_LIMIT_ACCOUNT_MOD = 2000
+API_LIMIT_ACCOUNT_ADMIN = 3000
 
 CORS(app)
 
@@ -30,6 +38,15 @@ def dynamic_key_func():
     ip = get_remote_address()
     import hashlib
     return hashlib.sha256(ip.encode()).hexdigest()
+
+def load_user_map():
+    try:
+        if os.path.exists(MAP_FILE):
+            with open(MAP_FILE, 'r') as f:
+                return json.load(f)
+    except:
+        pass
+    return {}
 
 def bypass_token(f):
     @wraps(f)
@@ -90,9 +107,76 @@ def save_user_data(user_id, user_data):
         print(f"Error saving user data: {e}")
         return False
 
+def find_user_by_api_key(api_key):
+    if not api_key:
+        return (None, None, None)
+    try:
+        user_map = load_user_map()
+        for _, entry in user_map.items():
+            if isinstance(entry, dict) and entry.get('api_key') == api_key:
+                filename = entry.get('filename')
+                user_id = entry.get('userID') or entry.get('username')
+                full_path = os.path.join(USER_DIR, filename)
+                return (user_id, filename, full_path)
+    except:
+        pass
+    try:
+        for fname in os.listdir(USER_DIR):
+            if fname.endswith('.json'):
+                full_path = os.path.join(USER_DIR, fname)
+                with open(full_path, 'r') as f:
+                    data = json.load(f)
+                if data.get('api_key') == api_key:
+                    return (data.get('userID'), fname, full_path)
+    except:
+        pass
+    return (None, None, None)
+
+def get_limit_for_type(account_type):
+    t = str(account_type).upper()
+    if t == "VIP":
+        return API_LIMIT_ACCOUNT_VIP
+    if t == "LARP":
+        return API_LIMIT_ACCOUNT_LARP
+    if t == "MOD":
+        return API_LIMIT_ACCOUNT_MOD
+    if t == "ADMIN":
+        return API_LIMIT_ACCOUNT_ADMIN
+    return API_LIMIT_ACCOUNT_FREE
+
+def requireAPI(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        token = request.headers.get("Authorization") or request.headers.get("X-Api-Token")
+        if not token:
+            return jsonify({'error': 'Missing Authorization token'}), 401
+        if token == BYPASS_TOKEN:
+            request._bypass_limiter = True
+            g.user = {'username': 'bypass', 'userID': 'bypass'}
+            return f(*args, **kwargs)
+        user_id, filename, full_path = find_user_by_api_key(token)
+        if not filename or not os.path.exists(full_path):
+            return jsonify({'error': 'Invalid API token'}), 401
+        try:
+            with open(full_path, 'r') as f:
+                data = json.load(f)
+        except:
+            return jsonify({'error': 'Invalid user data'}), 401
+        usage = int(data.get('TokenUsage', 0))
+        limit = get_limit_for_type(data.get('account_type', 'Free'))
+        if usage >= limit:
+            return jsonify({'error': 'API limit reached'}), 429
+        data['TokenUsage'] = usage + 1
+        with open(full_path, 'w') as f:
+            json.dump(data, f, indent=4)
+        g.user = {'username': data.get('username'), 'userID': data.get('userID'), 'file': full_path}
+        return f(*args, **kwargs)
+    return wrapper
+
 @app.route('/v1/osint/roblox')
 @limiter.limit("300/hour")
 @bypass_token
+@requireAPI
 def get_roblox_osint():
     identifier = request.args.get('id') or request.args.get('username')
     if not identifier:
@@ -118,6 +202,7 @@ def get_roblox_osint():
 
 @app.route('/v1/osint/github')
 @limiter.limit("300/hour")
+@requireAPI
 def get_github_osint():
     username = request.args.get('username')
     if not username:
@@ -146,6 +231,7 @@ def get_github_osint():
 @app.route("/v1/osint/tiktok", methods=["GET"])
 @limiter.limit("300/hour")
 @bypass_token
+@requireAPI
 def osint_tiktok():
     username = request.args.get("username")
     if not username:
@@ -158,6 +244,7 @@ def osint_tiktok():
 
 @app.route("/v1/osint/instagram", methods=["GET", "OPTIONS"])
 @limiter.limit("300/hour")
+@requireAPI
 def osint_instagram():
     username = request.args.get("username")
     if not username:
