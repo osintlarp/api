@@ -310,7 +310,9 @@ def get_user_data():
         response_data = {
             'userID': user_data.get('userID'),
             'username': user_data.get('username'),
-            'api_key': user_data.get('api_key')
+            'api_key': user_data.get('api_key'),
+            'tokenUsage': user_data.get('TokenUsage'),
+            'accountType': user_data.get('account_type')
         }
 
         return jsonify(response_data)
