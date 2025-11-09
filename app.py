@@ -142,9 +142,9 @@ def requireAPI(f):
         if not os.path.exists(MAP_FILE):
             return jsonify({"error": "User map not found"}), 500
 
-        with open(MAP_FILE, "r") as f:
+        with open(MAP_FILE, "r") as map_file:
             try:
-                user_map = json.load(f)
+                user_map = json.load(map_file)
             except Exception:
                 return jsonify({"error": "Failed to read user map"}), 500
 
@@ -165,9 +165,9 @@ def requireAPI(f):
         if not os.path.exists(user_file):
             return jsonify({"error": "User file not found"}), 404
 
-        with open(user_file, "r") as f:
+        with open(user_file, "r") as userfile:
             try:
-                user_data = json.load(f)
+                user_data = json.load(userfile)
             except Exception:
                 return jsonify({"error": "Failed to read user data"}), 500
 
@@ -177,25 +177,20 @@ def requireAPI(f):
         account_type = user_data.get("account_type", "Free").upper()
         usage = user_data.get("TokenUsage", 0)
 
-        if account_type == "Free":
-            limit = API_LIMIT_ACCOUNT_FREE
-        elif account_type == "VIP":
-            limit = API_LIMIT_ACCOUNT_VIP
-        elif account_type == "LARP":
-            limit = API_LIMIT_ACCOUNT_LARP
-        elif account_type == "Moderator":
-            limit = API_LIMIT_ACCOUNT_MOD
-        elif account_type == "Admin":
-            limit = API_LIMIT_ACCOUNT_ADMIN
-        else:
-            limit = API_LIMIT_ACCOUNT_FREE
+        limit = {
+            "Free": API_LIMIT_ACCOUNT_FREE,
+            "VIP": API_LIMIT_ACCOUNT_VIP,
+            "LARP": API_LIMIT_ACCOUNT_LARP,
+            "Moderator": API_LIMIT_ACCOUNT_MOD,
+            "Admin": API_LIMIT_ACCOUNT_ADMIN
+        }.get(account_type, API_LIMIT_ACCOUNT_FREE)
 
         if usage >= limit:
             return jsonify({"error": "API limit reached"}), 429
 
         user_data["TokenUsage"] = usage + 1
-        with open(user_file, "w") as f:
-            json.dump(user_data, f, indent=4)
+        with open(user_file, "w") as userfile:
+            json.dump(user_data, userfile, indent=4)
 
         return f(*args, **kwargs)
     return wrapper
