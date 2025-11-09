@@ -132,44 +132,49 @@ def find_user_by_api_key(api_key):
         pass
     return (None, None, None)
 
-def get_limit_for_type(account_type):
-    t = str(account_type).upper()
-    if t == "VIP":
-        return API_LIMIT_ACCOUNT_VIP
-    if t == "LARP":
-        return API_LIMIT_ACCOUNT_LARP
-    if t == "MOD":
-        return API_LIMIT_ACCOUNT_MOD
-    if t == "ADMIN":
-        return API_LIMIT_ACCOUNT_ADMIN
-    return API_LIMIT_ACCOUNT_FREE
-
 def requireAPI(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        token = request.headers.get("Authorization") or request.headers.get("X-Api-Token")
+        token = request.headers.get("Authorization")
         if not token:
-            return jsonify({'error': 'Missing Authorization token'}), 401
-        if token == BYPASS_TOKEN:
-            request._bypass_limiter = True
-            g.user = {'username': 'bypass', 'userID': 'bypass'}
-            return f(*args, **kwargs)
-        user_id, filename, full_path = find_user_by_api_key(token)
-        if not filename or not os.path.exists(full_path):
-            return jsonify({'error': 'Invalid API token'}), 401
+            return jsonify({"error": "Missing Authorization header"}), 401
+
+        user_path = os.path.join("_internal", "users", f"{token}.json")
+        if not os.path.exists(user_path):
+            return jsonify({"error": "Invalid API key"}), 403
+
         try:
-            with open(full_path, 'r') as f:
-                data = json.load(f)
-        except:
-            return jsonify({'error': 'Invalid user data'}), 401
-        usage = int(data.get('TokenUsage', 0))
-        limit = get_limit_for_type(data.get('account_type', 'Free'))
+            with open(user_path, "r") as f_json:
+                user_data = json.load(f_json)
+        except Exception:
+            return jsonify({"error": "Failed to read user data"}), 500
+
+        if user_data.get("isBanned", False):
+            return jsonify({"error": "User is banned"}), 403
+
+        account_type = user_data.get("account_type", "Free").upper()
+        usage = user_data.get("TokenUsage", 0)
+
+        if account_type == "Free":
+            limit = API_LIMIT_ACCOUNT_FREE
+        elif account_type == "VIP":
+            limit = API_LIMIT_ACCOUNT_VIP
+        elif account_type == "LARP":
+            limit = API_LIMIT_ACCOUNT_LARP
+        elif account_type == "Moderator":
+            limit = API_LIMIT_ACCOUNT_MOD
+        elif account_type == "Admin":
+            limit = API_LIMIT_ACCOUNT_ADMIN
+        else:
+            limit = API_LIMIT_ACCOUNT_FREE
+
         if usage >= limit:
-            return jsonify({'error': 'API limit reached'}), 429
-        data['TokenUsage'] = usage + 1
-        with open(full_path, 'w') as f:
-            json.dump(data, f, indent=4)
-        g.user = {'username': data.get('username'), 'userID': data.get('userID'), 'file': full_path}
+            return jsonify({"error": "API limit reached"}), 429
+
+        user_data["TokenUsage"] = usage + 1
+        with open(user_path, "w") as f_json:
+            json.dump(user_data, f_json, indent=4)
+
         return f(*args, **kwargs)
     return wrapper
 
