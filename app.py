@@ -132,51 +132,44 @@ def find_user_by_api_key(api_key):
         pass
     return (None, None, None)
 
-def requireAPI(f):
+def optionalAPI(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
         token = request.headers.get("Authorization")
         if not token:
-            return jsonify({"error": "Missing Authorization header"}), 401
-
+            ip = get_remote_address()
+            key = hashlib.sha256(ip.encode()).hexdigest()
+            limited = limiter.shared_limit("5 per 10 minutes", scope="public")(f)
+            return limited(*args, **kwargs)
         if not os.path.exists(MAP_FILE):
             return jsonify({"error": "User map not found"}), 500
-
         with open(MAP_FILE, "r") as map_file:
             try:
                 user_map = json.load(map_file)
             except Exception:
                 return jsonify({"error": "Failed to read user map"}), 500
-
         matched_user = None
         for user_entry in user_map.values():
             if user_entry.get("api_key") == token:
                 matched_user = user_entry
                 break
-
         if not matched_user:
             return jsonify({"error": "Invalid API key"}), 403
-
         filename = matched_user.get("filename")
         if not filename:
             return jsonify({"error": "User file not defined"}), 500
-
         user_file = os.path.join(USER_DIR, filename)
         if not os.path.exists(user_file):
             return jsonify({"error": "User file not found"}), 404
-
         with open(user_file, "r") as userfile:
             try:
                 user_data = json.load(userfile)
             except Exception:
                 return jsonify({"error": "Failed to read user data"}), 500
-
         if user_data.get("isBanned", False):
             return jsonify({"error": "User is banned"}), 403
-
-        account_type = user_data.get("account_type", "Free").upper()
+        account_type = user_data.get("account_type", "Free").capitalize()
         usage = user_data.get("TokenUsage", 0)
-
         limit = {
             "Free": API_LIMIT_ACCOUNT_FREE,
             "VIP": API_LIMIT_ACCOUNT_VIP,
@@ -184,21 +177,17 @@ def requireAPI(f):
             "Moderator": API_LIMIT_ACCOUNT_MOD,
             "Admin": API_LIMIT_ACCOUNT_ADMIN
         }.get(account_type, API_LIMIT_ACCOUNT_FREE)
-
         if usage >= limit:
             return jsonify({"error": "API limit reached"}), 429
-
         user_data["TokenUsage"] = usage + 1
         with open(user_file, "w") as userfile:
             json.dump(user_data, userfile, indent=4)
-
         return f(*args, **kwargs)
     return wrapper
 
-@app.route('/v1/osint/roblox')
-@limiter.limit("300/hour")
+@app.route('/v1/osint/roblox'
 @bypass_token
-@requireAPI
+@optionalAPI
 def get_roblox_osint():
     identifier = request.args.get('id') or request.args.get('username')
     if not identifier:
@@ -223,8 +212,7 @@ def get_roblox_osint():
         return jsonify({'error': 'An internal server error occurred'}), 500
 
 @app.route('/v1/osint/github')
-@limiter.limit("300/hour")
-@requireAPI
+@optionalAPI
 def get_github_osint():
     username = request.args.get('username')
     if not username:
@@ -251,9 +239,8 @@ def get_github_osint():
         return jsonify({'error': 'An internal server error occurred'}), 500
 
 @app.route("/v1/osint/tiktok", methods=["GET"])
-@limiter.limit("300/hour")
 @bypass_token
-@requireAPI
+@optionalAPI
 def osint_tiktok():
     username = request.args.get("username")
     if not username:
@@ -265,8 +252,8 @@ def osint_tiktok():
     return jsonify(data), status
 
 @app.route("/v1/osint/instagram", methods=["GET", "OPTIONS"])
-@limiter.limit("300/hour")
-@requireAPI
+@bypass_token
+@optionalAPI
 def osint_instagram():
     username = request.args.get("username")
     if not username:
