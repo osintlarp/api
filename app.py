@@ -6,6 +6,7 @@ from flask_cors import CORS
 from functools import wraps
 from tiktok import get_tiktok_data
 from instagram import fetch_instagram_data
+from reddit import fetch_reddit_user
 from datetime import datetime
 import json
 import roblox
@@ -261,6 +262,18 @@ def osint_instagram():
         
     data, status = fetch_instagram_data(username)
     return jsonify(data), status
+
+@app.route("/v1/osint/reddit", methods=["GET"])
+def reddit_user():
+    username = request.args.get("username")
+    if not username:
+        return jsonify({"error": "username parameter is required"}), 400
+
+    try:
+        data = fetch_reddit_user(username)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/v1/api_endpoints', methods=['GET'])
 def api_endpoints():
