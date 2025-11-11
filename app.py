@@ -264,6 +264,8 @@ def osint_instagram():
     return jsonify(data), status
 
 @app.route("/v1/osint/reddit", methods=["GET"])
+@bypass_token
+@optionalAPI
 def reddit_user():
     username = request.args.get("username")
     if not username:
@@ -274,6 +276,32 @@ def reddit_user():
         return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route("/v1/osint/reddit/report_user", methods=["GET"])
+@bypass_token
+@optionalAPI
+def reddit_report():
+    redditor_id = request.args.get("userID")
+    if not redditor_id:
+        return jsonify({"error": "Missing 'userID' query parameter"}), 400
+
+    site_rule = request.args.get("site_rule", "SPAM_OTHER")
+    reason_type = request.args.get("reason_type", "USERNAME")
+    use_proxies = request.args.get("use_proxies", "false").lower() == "true"
+    force_proxy = request.args.get("force_proxy", "false").lower() == "true"
+
+    report_result = report_reddit_user(
+        redditor_id=redditor_id,
+        site_rule=site_rule,
+        reason_type=reason_type,
+        use_proxies=use_proxies,
+        ForceProxy=force_proxy
+    )
+
+    if report_result is None:
+        return jsonify({"error": "Failed to report user"}), 500
+
+    return jsonify(report_result)
 
 @app.route('/v1/api_endpoints', methods=['GET'])
 def api_endpoints():
