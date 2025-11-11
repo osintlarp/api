@@ -60,7 +60,7 @@ def bypass_token(f):
 
 limiter = Limiter(
     key_func=dynamic_key_func,
-    default_limits=["300 per hour"]
+    default_limits=["150 per 10 minutes"]
 )
 limiter.init_app(app)
 
@@ -133,42 +133,32 @@ def find_user_by_api_key(api_key):
         pass
     return (None, None, None)
 
-def optionalAPI(f):
+def optionalAPI(f, limiter=None):
     @wraps(f)
     def wrapper(*args, **kwargs):
         token = request.headers.get("Authorization")
         if not token:
-            ip = get_remote_address()
-            key = hashlib.sha256(ip.encode()).hexdigest()
-            limited = limiter.shared_limit("5 per 10 minutes", scope="public")(f)
-            return limited(*args, **kwargs)
-        if not os.path.exists(MAP_FILE):
-            return jsonify({"error": "User map not found"}), 500
-        with open(MAP_FILE, "r") as map_file:
-            try:
-                user_map = json.load(map_file)
-            except Exception:
-                return jsonify({"error": "Failed to read user map"}), 500
-        matched_user = None
-        for user_entry in user_map.values():
-            if user_entry.get("api_key") == token:
-                matched_user = user_entry
-                break
-        if not matched_user:
+            if limiter:
+                key = hashlib.sha256(get_remote_address().encode()).hexdigest()
+                try:
+                    limiter._check_request_limit(key, "5 per 10 minutes")
+                except Exception:
+                    return jsonify({"error": "Rate limit exceeded"}), 429
+            return f(*args, **kwargs)
+
+        user_id, filename, user_file = find_user_by_api_key(token)
+        if not user_id:
             return jsonify({"error": "Invalid API key"}), 403
-        filename = matched_user.get("filename")
-        if not filename:
-            return jsonify({"error": "User file not defined"}), 500
-        user_file = os.path.join(USER_DIR, filename)
-        if not os.path.exists(user_file):
-            return jsonify({"error": "User file not found"}), 404
-        with open(user_file, "r") as userfile:
-            try:
-                user_data = json.load(userfile)
-            except Exception:
-                return jsonify({"error": "Failed to read user data"}), 500
+
+        try:
+            with open(user_file, "r") as f:
+                user_data = json.load(f)
+        except:
+            return jsonify({"error": "Failed to read user data"}), 500
+
         if user_data.get("isBanned", False):
             return jsonify({"error": "User is banned"}), 403
+
         account_type = user_data.get("account_type", "Free").capitalize()
         usage = user_data.get("TokenUsage", 0)
         limit = {
@@ -178,12 +168,57 @@ def optionalAPI(f):
             "Moderator": API_LIMIT_ACCOUNT_MOD,
             "Admin": API_LIMIT_ACCOUNT_ADMIN
         }.get(account_type, API_LIMIT_ACCOUNT_FREE)
+
         if usage >= limit:
             return jsonify({"error": "API limit reached"}), 429
+
         user_data["TokenUsage"] = usage + 1
-        with open(user_file, "w") as userfile:
-            json.dump(user_data, userfile, indent=4)
+        with open(user_file, "w") as f:
+            json.dump(user_data, f, indent=4)
+
         return f(*args, **kwargs)
+
+    return wrapper
+
+def requireAPI(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        token = request.headers.get("Authorization")
+        if not token:
+            return jsonify({"error": "API key required"}), 403
+
+        user_id, filename, user_file = find_user_by_api_key(token)
+        if not user_id:
+            return jsonify({"error": "Invalid API key"}), 403
+
+        try:
+            with open(user_file, "r") as f:
+                user_data = json.load(f)
+        except:
+            return jsonify({"error": "Failed to read user data"}), 500
+
+        if user_data.get("isBanned", False):
+            return jsonify({"error": "User is banned"}), 403
+
+        account_type = user_data.get("account_type", "Free").capitalize()
+        usage = user_data.get("TokenUsage", 0)
+        limit = {
+            "Free": API_LIMIT_ACCOUNT_FREE,
+            "VIP": API_LIMIT_ACCOUNT_VIP,
+            "LARP": API_LIMIT_ACCOUNT_LARP,
+            "Moderator": API_LIMIT_ACCOUNT_MOD,
+            "Admin": API_LIMIT_ACCOUNT_ADMIN
+        }.get(account_type, API_LIMIT_ACCOUNT_FREE)
+
+        if usage >= limit:
+            return jsonify({"error": "API limit reached"}), 429
+
+        user_data["TokenUsage"] = usage + 1
+        with open(user_file, "w") as f:
+            json.dump(user_data, f, indent=4)
+
+        return f(*args, **kwargs)
+
     return wrapper
 
 @app.route('/v1/osint/roblox')
@@ -279,7 +314,7 @@ def reddit_user():
 
 @app.route("/v1/osint/reddit/report_user", methods=["GET"])
 @bypass_token
-@optionalAPI
+@requireAPI
 def reddit_report():
     redditor_id = request.args.get("userID")
     if not redditor_id:
