@@ -186,7 +186,7 @@ def optionalAPI(f):
         return f(*args, **kwargs)
     return wrapper
 
-@app.route('/v1/osint/roblox'
+@app.route('/v1/osint/roblox')
 @bypass_token
 @optionalAPI
 def get_roblox_osint():
