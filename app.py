@@ -133,26 +133,20 @@ def find_user_by_api_key(api_key):
         pass
     return (None, None, None)
 
-def optionalAPI(f, limiter=None):
+def optionalAPI(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
         token = request.headers.get("Authorization")
         if not token:
-            if limiter:
-                key = hashlib.sha256(get_remote_address().encode()).hexdigest()
-                try:
-                    limiter._check_request_limit(key, "5 per 10 minutes")
-                except Exception:
-                    return jsonify({"error": "Rate limit exceeded"}), 429
-            return f(*args, **kwargs)
+            return limiter.shared_limit("5 per 10 minutes", scope="public")(f)(*args, **kwargs)
 
         user_id, filename, user_file = find_user_by_api_key(token)
         if not user_id:
             return jsonify({"error": "Invalid API key"}), 403
 
         try:
-            with open(user_file, "r") as f:
-                user_data = json.load(f)
+            with open(user_file, "r") as fdata:
+                user_data = json.load(fdata)
         except:
             return jsonify({"error": "Failed to read user data"}), 500
 
@@ -173,8 +167,8 @@ def optionalAPI(f, limiter=None):
             return jsonify({"error": "API limit reached"}), 429
 
         user_data["TokenUsage"] = usage + 1
-        with open(user_file, "w") as f:
-            json.dump(user_data, f, indent=4)
+        with open(user_file, "w") as fdata:
+            json.dump(user_data, fdata, indent=4)
 
         return f(*args, **kwargs)
 
@@ -192,8 +186,8 @@ def requireAPI(f):
             return jsonify({"error": "Invalid API key"}), 403
 
         try:
-            with open(user_file, "r") as f:
-                user_data = json.load(f)
+            with open(user_file, "r") as fdata:
+                user_data = json.load(fdata)
         except:
             return jsonify({"error": "Failed to read user data"}), 500
 
@@ -214,8 +208,8 @@ def requireAPI(f):
             return jsonify({"error": "API limit reached"}), 429
 
         user_data["TokenUsage"] = usage + 1
-        with open(user_file, "w") as f:
-            json.dump(user_data, f, indent=4)
+        with open(user_file, "w") as fdata:
+            json.dump(user_data, fdata, indent=4)
 
         return f(*args, **kwargs)
 
