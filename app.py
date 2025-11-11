@@ -6,7 +6,7 @@ from flask_cors import CORS
 from functools import wraps
 from tiktok import get_tiktok_data
 from instagram import fetch_instagram_data
-from reddit import fetch_reddit_user
+from reddit import fetch_reddit_user, report_reddit_user
 from datetime import datetime
 import json
 import roblox
