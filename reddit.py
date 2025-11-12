@@ -17,7 +17,7 @@ def reddit_p_device_id():
     return ''.join(random.choice(hex_chars) for _ in range(96))
 
 def fetch_reddit_user(username, use_proxies=False, ForceProxy=False):
-    client_vendor_id = generate_uuid()
+    client_vendor_id = x_reddit_device_id()
     reddit_device_id = client_vendor_id  
     reddit_p_id = reddit_p_device_id()
 
