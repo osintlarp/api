@@ -4,31 +4,116 @@
   "endpoints": [
     {
       "method": "GET",
-      "path": "/v1/phone",
-      "description": "Get Verified Phone Number",
-      "params": [],
+      "path": "/v1/osint/roblox",
+      "description": "Retrieve Roblox OSINT data by user ID or username.",
+      "params": [
+        { "name": "id", "type": "string", "required": false, "description": "Roblox user ID" },
+        { "name": "username", "type": "string", "required": false, "description": "Roblox username" },
+        { "name": "cache", "type": "boolean", "required": false, "description": "Use cached data (default: true)" }
+      ],
       "response_example": {
-        "countryCode": "US",
-        "prefix": "123",
-        "phone": "4567890",
-        "isVerified": true
+        "username": "ExampleUser",
+        "userId": 123456,
+        "followers": 420,
+        "status": "Verified"
       }
     },
     {
-      "method": "POST",
-      "path": "/v1/description",
-      "description": "Update the user's description",
+      "method": "GET",
+      "path": "/v1/osint/github",
+      "description": "Retrieve GitHub OSINT data by username.",
       "params": [
-        {
-          "name": "description",
-          "type": "string",
-          "required": true,
-          "description": "The new description text"
-        }
+        { "name": "username", "type": "string", "required": true, "description": "GitHub username" },
+        { "name": "cache", "type": "boolean", "required": false, "description": "Use cached data (default: true)" }
       ],
       "response_example": {
-        "success": true
+        "username": "octocat",
+        "followers": 1234,
+        "repositories": 56,
+        "bio": "Just another cat on GitHub"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/osint/tiktok",
+      "description": "Retrieve TikTok user data by username.",
+      "params": [
+        { "name": "username", "type": "string", "required": true, "description": "TikTok username" },
+        { "name": "force_proxy", "type": "boolean", "required": false, "description": "Force proxy usage" }
+      ],
+      "response_example": {
+        "username": "charlidamelio",
+        "followers": 150000000,
+        "verified": true,
+        "bio": "hey :)"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/osint/instagram",
+      "description": "Retrieve Instagram OSINT data by username.",
+      "params": [
+        { "name": "username", "type": "string", "required": true, "description": "Instagram username" }
+      ],
+      "response_example": {
+        "username": "example",
+        "followers": 12000,
+        "verified": false,
+        "bio": "Hello Instagram"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/osint/reddit",
+      "description": "Retrieve Reddit OSINT data by username.",
+      "params": [
+        { "name": "username", "type": "string", "required": true, "description": "Reddit username" }
+      ],
+      "response_example": {
+        "username": "u/exampleuser",
+        "karma": 560,
+        "created_utc": "2020-01-01T12:00:00Z"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/osint/reddit/report_user",
+      "description": "Report a Reddit user for violating site rules.",
+      "params": [
+        { "name": "userID", "type": "string", "required": true, "description": "Reddit user ID" },
+        { "name": "site_rule", "type": "string", "required": false, "description": "Rule to report for (default: SPAM_OTHER)" },
+        { "name": "reason_type", "type": "string", "required": false, "description": "Reason type (default: USERNAME)" },
+        { "name": "use_proxies", "type": "boolean", "required": false, "description": "Whether to use proxies" },
+        { "name": "force_proxy", "type": "boolean", "required": false, "description": "Force proxy usage" }
+      ],
+      "response_example": {
+        "success": true,
+        "message": "Report submitted successfully"
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/api_endpoints",
+      "description": "Retrieve this endpoint list (self-documentation).",
+      "params": [],
+      "response_example": {
+        "base_url": "https://api.vaul3t.org",
+        "title": "User Information V1",
+        "endpoints": [
+          "List of all available API endpoints"
+        ]
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/v1/announcements",
+      "description": "Retrieve current announcements or news.",
+      "params": [],
+      "response_example": {
+        "announcement": "New OSINT endpoints added!",
+        "date": "2025-11-12"
       }
     }
   ]
 }
+
