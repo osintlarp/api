@@ -137,8 +137,9 @@ def optionalAPI(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
         token = request.headers.get("Authorization")
+        
         if not token:
-            return limiter.shared_limit("5 per 10 minutes", scope="public")(f)(*args, **kwargs)
+            return limiter.shared_limit("5 per 1 hour", scope=get_remote_address())(f)(*args, **kwargs)
 
         user_id, filename, user_file = find_user_by_api_key(token)
         if not user_id:
@@ -173,7 +174,7 @@ def optionalAPI(f):
         return f(*args, **kwargs)
 
     return wrapper
-
+    
 def requireAPI(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
