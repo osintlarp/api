@@ -8,6 +8,7 @@ from tiktok import get_tiktok_data
 from instagram import fetch_instagram_data
 from reddit import fetch_reddit_user, report_reddit_user
 from datetime import datetime
+from filelock import FileLock
 import json
 import roblox
 import github  
@@ -133,92 +134,61 @@ def find_user_by_api_key(api_key):
         pass
     return (None, None, None)
 
-def optionalAPI(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        token = request.headers.get("Authorization")
-        
-        if not token:
-            return limiter.shared_limit("5 per 1 hour", scope=get_remote_address())(f)(*args, **kwargs)
+def api_usage_decorator(optional=False):
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            token = request.headers.get("Authorization")
 
-        user_id, filename, user_file = find_user_by_api_key(token)
-        if not user_id:
-            return jsonify({"error": "Invalid API key"}), 403
+            if optional and not token:
+                return limiter.shared_limit("5 per 1 hour", scope=get_remote_address())(f)(*args, **kwargs)
+            
+            if not token:
+                return jsonify({"error": "API key required"}), 403
 
-        try:
-            with open(user_file, "r") as fdata:
-                user_data = json.load(fdata)
-        except:
-            return jsonify({"error": "Failed to read user data"}), 500
+            user_id, filename, user_file = find_user_by_api_key(token)
+            if not user_id:
+                return jsonify({"error": "Invalid API key"}), 403
 
-        if user_data.get("isBanned", False):
-            return jsonify({"error": "User is banned"}), 403
+            lock = FileLock(f"{user_file}.lock")
+            with lock:
+                try:
+                    with open(user_file, "r") as fdata:
+                        user_data = json.load(fdata)
+                except Exception:
+                    return jsonify({"error": "Failed to read user data"}), 500
 
-        account_type = user_data.get("account_type", "Free").capitalize()
-        usage = user_data.get("TokenUsage", 0)
-        limit = {
-            "Free": API_LIMIT_ACCOUNT_FREE,
-            "VIP": API_LIMIT_ACCOUNT_VIP,
-            "LARP": API_LIMIT_ACCOUNT_LARP,
-            "Moderator": API_LIMIT_ACCOUNT_MOD,
-            "Admin": API_LIMIT_ACCOUNT_ADMIN
-        }.get(account_type, API_LIMIT_ACCOUNT_FREE)
+                if user_data.get("isBanned", False):
+                    return jsonify({"error": "User is banned"}), 403
 
-        if usage >= limit:
-            return jsonify({"error": "API limit reached"}), 429
+                account_type = user_data.get("account_type", "Free").capitalize()
+                usage = user_data.get("TokenUsage", 0)
+                limit = {
+                    "Free": API_LIMIT_ACCOUNT_FREE,
+                    "VIP": API_LIMIT_ACCOUNT_VIP,
+                    "LARP": API_LIMIT_ACCOUNT_LARP,
+                    "Moderator": API_LIMIT_ACCOUNT_MOD,
+                    "Admin": API_LIMIT_ACCOUNT_ADMIN
+                }.get(account_type, API_LIMIT_ACCOUNT_FREE)
 
-        user_data["TokenUsage"] = usage + 1
-        with open(user_file, "w") as fdata:
-            json.dump(user_data, fdata, indent=4)
+                if usage >= limit:
+                    return jsonify({"error": "API limit reached"}), 429
 
-        return f(*args, **kwargs)
+                user_data["TokenUsage"] = usage + 1
 
-    return wrapper
-    
-def requireAPI(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        token = request.headers.get("Authorization")
-        if not token:
-            return jsonify({"error": "API key required"}), 403
+                temp_file = user_file + ".tmp"
+                with open(temp_file, "w") as fdata:
+                    json.dump(user_data, fdata, indent=4)
+                os.replace(temp_file, user_file)
 
-        user_id, filename, user_file = find_user_by_api_key(token)
-        if not user_id:
-            return jsonify({"error": "Invalid API key"}), 403
+            return f(*args, **kwargs)
 
-        try:
-            with open(user_file, "r") as fdata:
-                user_data = json.load(fdata)
-        except:
-            return jsonify({"error": "Failed to read user data"}), 500
-
-        if user_data.get("isBanned", False):
-            return jsonify({"error": "User is banned"}), 403
-
-        account_type = user_data.get("account_type", "Free").capitalize()
-        usage = user_data.get("TokenUsage", 0)
-        limit = {
-            "Free": API_LIMIT_ACCOUNT_FREE,
-            "VIP": API_LIMIT_ACCOUNT_VIP,
-            "LARP": API_LIMIT_ACCOUNT_LARP,
-            "Moderator": API_LIMIT_ACCOUNT_MOD,
-            "Admin": API_LIMIT_ACCOUNT_ADMIN
-        }.get(account_type, API_LIMIT_ACCOUNT_FREE)
-
-        if usage >= limit:
-            return jsonify({"error": "API limit reached"}), 429
-
-        user_data["TokenUsage"] = usage + 1
-        with open(user_file, "w") as fdata:
-            json.dump(user_data, fdata, indent=4)
-
-        return f(*args, **kwargs)
-
-    return wrapper
+        return wrapper
+    return decorator
 
 @app.route('/v1/osint/roblox')
 @bypass_token
-@optionalAPI
+@api_usage_decorator(optional=True)
 def get_roblox_osint():
     identifier = request.args.get('id') or request.args.get('username')
     if not identifier:
@@ -243,7 +213,7 @@ def get_roblox_osint():
         return jsonify({'error': 'An internal server error occurred'}), 500
 
 @app.route('/v1/osint/github')
-@optionalAPI
+@api_usage_decorator(optional=True)
 def get_github_osint():
     username = request.args.get('username')
     if not username:
@@ -271,7 +241,7 @@ def get_github_osint():
 
 @app.route("/v1/osint/tiktok", methods=["GET"])
 @bypass_token
-@optionalAPI
+@api_usage_decorator(optional=True)
 def osint_tiktok():
     username = request.args.get("username")
     if not username:
@@ -284,7 +254,7 @@ def osint_tiktok():
 
 @app.route("/v1/osint/instagram", methods=["GET", "OPTIONS"])
 @bypass_token
-@optionalAPI
+@api_usage_decorator(optional=True)
 def osint_instagram():
     username = request.args.get("username")
     if not username:
@@ -295,7 +265,7 @@ def osint_instagram():
 
 @app.route("/v1/osint/reddit", methods=["GET"])
 @bypass_token
-@optionalAPI
+@api_usage_decorator(optional=True)
 def reddit_user():
     username = request.args.get("username")
     if not username:
@@ -309,7 +279,7 @@ def reddit_user():
 
 @app.route("/v1/osint/reddit/report_user", methods=["GET"])
 @bypass_token
-@requireAPI
+@api_usage_decorator(optional=False)
 def reddit_report():
     redditor_id = request.args.get("userID")
     if not redditor_id:
