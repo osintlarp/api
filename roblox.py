@@ -260,24 +260,18 @@ def _filter_data(full_data, options):
     return filtered_result
 
 def get_user_promo_channels(user_id):
-    url = f"https://accountinformation.roblox.com/v1/users/{user_id}/promotion-channels?alwaysReturnUrls=true"
-    r, err = try_request("get", url, headers=headers, cookies=cookies)
-    
+    url = f"https://users.roblox.com/v1/users/{user_id}/promotion-channels"
+    headers = {"User-Agent": get_user_agent()}
+    r, err = try_request("get", url, headers=headers)
     if err:
-        return {"status_code": getattr(r, 'status_code', None), "promotionChannels": [], "error": err}
+        return {}
+    if not r or r.status_code != 200:
+        return {}
+    data = r.json()
+    if not isinstance(data, dict):
+        return {}
+    return data
     
-    if r and r.status_code == 200:
-        try:
-            data = r.json()
-            channels = data.get("promotionChannels")
-            if channels is None:
-                channels = []
-            return {"status_code": r.status_code, "promotionChannels": channels}
-        except Exception as e:
-            return {"status_code": r.status_code, "promotionChannels": [], "error": f"Failed to parse JSON: {e}"}
-    
-    return {"status_code": getattr(r, 'status_code', None), "promotionChannels": [], "error": "Failed to fetch promo channels"}
-
 def get_user_info(identifier, use_cache=True, **options):
     cache_username = None
     full_data = None
