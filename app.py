@@ -234,7 +234,7 @@ def report_roblox_user_direct():
         "origin": "https://www.roblox.com",
         "user-agent": "Mozilla/5.0 (iPhone; iPhone17,5; CPU iPhone OS 26.1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Mobile/9B176 ROBLOX iOS App 2.698.937 Hybrid RobloxApp/2.698.937 (GlobalDist; AppleAppStore)",
         "referer": "https://www.roblox.com/",
-        "x-csrf-token": "fetching",
+        "x-csrf-token": "EEeYXaBAnIIq",
         "sec-fetch-dest": "empty"
     }
 
@@ -251,14 +251,6 @@ def report_roblox_user_direct():
         "rbx-ip2": "1",
         "rbxas": "78327c2bf7908856ffe243c7589cf65d85d2dab3cacf0305d1f466363e38c7d9"
     }
-
-    csrf_req = requests.post("https://auth.roblox.com/v2/logout", cookies=cookies)
-    csrf_token = csrf_req.headers.get("x-csrf-token")
-
-    if not csrf_token:
-        return jsonify({"error": "Failed to fetch CSRF token"}), 500
-
-    headers["x-csrf-token"] = csrf_token
 
     payload = {
         "tags": {
