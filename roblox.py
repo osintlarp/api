@@ -39,9 +39,10 @@ gameSERVERSurl = "https://games.roblox.com/v1/games/(gameID)/servers/Public?curs
 ALL_OPTION_KEYS = [
     'user_id', 'alias', 'display_name', 'description', 'is_banned',
     'has_verified_badge', 'friends', 'followers', 'following', 'join_date',
-    'account_age', 'roblox_badges', 'previous_usernames', 'groups', 'about_me', 
+    'account_age', 'roblox_badges', 'previous_usernames', 'groups', 'about_me',
     'friends_list', 'followers_list', 'following_list', 'presence_status',
-    'last_location', 'current_place_id', 'last_online_timestamp'
+    'last_location', 'current_place_id', 'last_online_timestamp',
+    'promotion_channels'
 ]
 
 headers = {
