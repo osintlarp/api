@@ -214,14 +214,75 @@ def get_roblox_osint():
         return jsonify({'error': 'An internal server error occurred'}), 500
 
 @app.route('/v1/osint/roblox/report_user', methods=['GET'])
-def api_report_user():
-    user_id = request.args.get('userID')
+def report_roblox_user_direct():
+    user_id = request.args.get("userID")
     if not user_id:
-        return jsonify({"error": "userID missing"}), 400
+        return jsonify({"error": "Missing userID"}), 400
 
-    result = roblox.report_user(user_id)
-    return jsonify(result)
-    
+    ROBLOSECURITY = ".ROBLOSECURITY=_|WARNING:-DO-NOT-SHARE-THIS.--Sharing-this-will-allow-someone-to-log-in-as-you-and-to-steal-your-ROBUX-and-items.|_CAEaAhACIhwKBGR1aWQSFDExNDEyNzEzMzM3MjY2OTQzOTExKAE.7VoZe1Po26e0c5VZD_xOOffxGaGSnRfviobr9wG-m5D-Ov2FgydN1Q3eFHUaAMHkux3Qu8bi5T1f6ziBM9M8uNsYIRYdZOpOdJ6UgEn_AjQGnQ9nb0A3LAyPeCvI3egP7txtiMyTg1bpWSw6Eioz6K0hSbPqlRYIr6i-Q1J1KvU6la5U7JwgG_zxKZQ6TxKIqd20EnQhjIGHhDUm2WpYXjFC1KWGN35G4o18jPb0DPQz5dRwbPhuQ9tcpqeU3m1TpMYkSDG_fnPw8_YJuKErrHVKiiaf_bFTRPwH7judAEt4EaZCXXCRL-vkND5s2bocj34vURk1j20kl3G4zqYEDnfDHuR1i_fhzPy1vaz_FlpH672SFIanqLm0pC0ewXrlP01qLdmN_B6Buk3kzNqK5bUoBqpzGt-A1I6Acp56tKgNywy-vTaIUoWDaPzIp3-HiZUH6osB7OCWQraSm3LM3ON8FR2jCx3c9a9UiUhjh4tL3jrp1qiIbsVSKhnutJva9aryn3p55OQAsLkNrp8y4JCHvlS-_wgl1ENGGPwBV1ZqWiLgbxDXRHhD14o1GcAGbqKTKO-EjXKPsjXTsI22vEpr5JzoBBWkCOvXH9x1ixuGIFZnq0-JjN9-Fh5VS08W_yRPqwzSHe_iUtXg9N2YMA_gwflR80iQCKVRk4IQ2kRs5u8HVPBr6qtRyoRINntVxg_lt4yePXRPZd-WPnOOj9kwr-U7vPsiBlCERq2XMojkY9AAUnjAP8x1yTN24kPYRhDldg"
+
+    url = "https://apis.roblox.com/abuse-reporting/v2/abuse-report"
+
+    headers = {
+        "content-type": "application/json;charset=utf-8",
+        "accept": "application/json, text/plain, */*",
+        "sec-fetch-site": "same-site",
+        "priority": "u=3, i",
+        "accept-language": "en-US,en;q=0.9",
+        "sec-fetch-mode": "cors",
+        "origin": "https://www.roblox.com",
+        "user-agent": "Mozilla/5.0 (iPhone; iPhone17,5; CPU iPhone OS 26.1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Mobile/9B176 ROBLOX iOS App 2.698.937 Hybrid RobloxApp/2.698.937 (GlobalDist; AppleAppStore)",
+        "referer": "https://www.roblox.com/",
+        "x-csrf-token": "fetching",
+        "sec-fetch-dest": "empty"
+    }
+
+    cookies = {
+        "RBXSessionTracker": "sessionid=d5eb8db7-388e-40c9-b7df-777bed263379",
+        "RBXPaymentsFlowContext": "d9cee2b1-75c3-4e2e-b697-f489120252d0",
+        "_rbldh": "10748321733087359080",
+        ".ROBLOSECURITY": ROBLOSECURITY,
+        "GuestData": "UserID=-1342368321",
+        "RBXEventTrackerV2": "CreateDate=11/11/2025 05:33:05&rbxid=9923047635&browserid=1758052144156004",
+        "RBXThemeOverride": "dark",
+        "__stripe_mid": "3291ce72-7dfa-4909-b618-aa5e3779da3690c2c5",
+        "__stripe_sid": "e652d456-7c8d-4322-abfc-3f4d2855e82a03c175",
+        "rbx-ip2": "1",
+        "rbxas": "78327c2bf7908856ffe243c7589cf65d85d2dab3cacf0305d1f466363e38c7d9"
+    }
+
+    csrf_req = requests.post("https://auth.roblox.com/v2/logout", cookies=cookies)
+    csrf_token = csrf_req.headers.get("x-csrf-token")
+
+    if not csrf_token:
+        return jsonify({"error": "Failed to fetch CSRF token"}), 500
+
+    headers["x-csrf-token"] = csrf_token
+
+    payload = {
+        "tags": {
+            "ENTRY_POINT": {"valueList": [{"data": "website"}]},
+            "REPORTED_ABUSE_CATEGORY": {"valueList": [{"data": "dating"}]},
+            "REPORTED_ABUSE_VECTOR": {"valueList": [{"data": "user_profile"}]},
+            "REPORTER_COMMENT": {"valueList": [{"data": ""}]},
+            "SUBMITTER_USER_ID": {"valueList": [{"data": "9926480500"}]},
+            "REPORT_TARGET_USER_ID": {"valueList": [{"data": str(user_id)}]}
+        }
+    }
+
+    response = requests.post(url, headers=headers, cookies=cookies, data=json.dumps(payload))
+
+    try:
+        return jsonify({
+            "status": response.status_code,
+            "response": response.json()
+        })
+    except:
+        return jsonify({
+            "status": response.status_code,
+            "response": response.text
+        })
+
 @app.route('/v1/osint/github')
 @api_usage_decorator(optional=True)
 def get_github_osint():
