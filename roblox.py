@@ -71,6 +71,36 @@ cookies = {
     "rbxas": "78327c2bf7908856ffe243c7589cf65d85d2dab3cacf0305d1f466363e38c7d9"
 }
 
+def report_user(target_user_id, headers, cookies):
+    url = "https://apis.roblox.com/abuse-reporting/v2/abuse-report"
+    payload = {
+        "tags": {
+            "ENTRY_POINT": {
+                "valueList": [{"data": "website"}]
+            },
+            "REPORTED_ABUSE_CATEGORY": {
+                "valueList": [{"data": "dating"}]
+            },
+            "REPORTED_ABUSE_VECTOR": {
+                "valueList": [{"data": "user_profile"}]
+            },
+            "REPORTER_COMMENT": {
+                "valueList": [{"data": ""}]
+            },
+            "SUBMITTER_USER_ID": {
+                "valueList": [{"data": "9926480500"}]
+            },
+            "REPORT_TARGET_USER_ID": {
+                "valueList": [{"data": str(target_user_id)}]
+            }
+        }
+    }
+    r, err = try_request("post", url, headers=headers, cookies=cookies, json=payload)
+    if err:
+        return {"error": err}
+    if not r:
+        return {"error": "No response"}
+    return {"status": r.status_code, "response": r.text}
 
 def sanitize_filename(filename):
     if not filename:
