@@ -19,6 +19,7 @@ import random
 import string
 import subprocess
 import threading
+from roblox import report_user
 
 app = Flask(__name__)
 BYPASS_TOKEN = "BOT-QWPPXCYNNMJUWGAG-X"
@@ -212,6 +213,20 @@ def get_roblox_osint():
         print(f"Error in roblox endpoint: {e}")
         return jsonify({'error': 'An internal server error occurred'}), 500
 
+@app.route('/v1/osint/roblox/report_user', methods=['GET'])
+def api_report_user():
+    user_id = request.args.get('userID')
+    if not user_id:
+        return jsonify({"error": "userID missing"}), 400
+    
+    result = report_user(
+        target_user_id=user_id,
+        headers=headers_local,
+        cookies=session_cookies
+    )
+    
+    return jsonify(result)
+    
 @app.route('/v1/osint/github')
 @api_usage_decorator(optional=True)
 def get_github_osint():
