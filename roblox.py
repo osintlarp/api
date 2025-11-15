@@ -258,6 +258,18 @@ def _filter_data(full_data, options):
             filtered_result[key] = full_data.get(key)
     return filtered_result
 
+def get_user_promo_channels(user_id):
+    url = f"https://accountinformation.roblox.com/v1/users/{user_id}/promotion-channels?alwaysReturnUrls=true"
+    r, err = try_request("get", url, headers=headers, cookies=cookies)
+    if err:
+        return {"error": err}
+    if r and r.status_code == 200:
+        try:
+            return r.json()
+        except Exception as e:
+            return {"error": f"Failed to parse JSON: {e}"}
+    return {"error": "Failed to fetch promo channels"}
+
 def get_user_info(identifier, use_cache=True, **options):
     cache_username = None
     full_data = None
@@ -280,9 +292,9 @@ def get_user_info(identifier, use_cache=True, **options):
         if not user_id:
             return {'error': 'User not found'}
 
-        headers = {'User-Agent': get_user_agent()}
+        headers_local = {'User-Agent': get_user_agent()}
         user_url = f"https://users.roblox.com/v1/users/{user_id}"
-        user_resp, err = try_request("get", user_url, headers=headers)
+        user_resp, err = try_request("get", user_url, headers=headers_local)
         
         if err:
             return {'error': err}
@@ -317,32 +329,22 @@ def get_user_info(identifier, use_cache=True, **options):
                     join_date_str_iso = join_date_str[:-1] + '+00:00'
                 else:
                     join_date_str_iso = join_date_str
-                    
                 join_date_obj = datetime.fromisoformat(join_date_str_iso)
-                
                 delta = datetime.now(timezone.utc) - join_date_obj
                 total_days = delta.days
-                
                 if total_days < 0:
                     full_data['account_age'] = "Joined in the future?"
                 else:
                     years = total_days // 365
                     days_remaining = total_days % 365
-                    
                     year_str = f"{years} Year" if years == 1 else f"{years} Years"
                     day_str = f"{days_remaining} Day" if days_remaining == 1 else f"{days_remaining} Days"
-
-                    if years > 0:
-                        full_data['account_age'] = f"{year_str}, {day_str}"
-                    else:
-                        full_data['account_age'] = day_str
-                        
-            except Exception as e:
-                print(f"Error parsing date {join_date_str}: {e}")
+                    full_data['account_age'] = f"{year_str}, {day_str}" if years > 0 else day_str
+            except Exception:
                 full_data['account_age'] = "Error calculating age"
 
         def cnt(url):
-            r, rl = try_request("get", url, headers=headers)
+            r, rl = try_request("get", url, headers=headers_local)
             if rl:
                 return 0
             if r and r.status_code == 200:
@@ -356,7 +358,6 @@ def get_user_info(identifier, use_cache=True, **options):
         presence_info = get_presence(user_id)
         if isinstance(presence_info, dict) and presence_info.get('error'):
             presence_info = None 
-
         if presence_info:
             full_data['presence_status'] = presence_info.get('status', 'N/A')
             full_data['last_location'] = presence_info.get('last_location', 'N/A')
@@ -369,40 +370,31 @@ def get_user_info(identifier, use_cache=True, **options):
             full_data['last_online_timestamp'] = 'N/A'
         
         previous_usernames = get_previous_usernames(user_id)
-        if isinstance(previous_usernames, dict) and previous_usernames.get('error'):
-            previous_usernames = [] 
-        full_data['previous_usernames'] = previous_usernames
+        full_data['previous_usernames'] = previous_usernames if not isinstance(previous_usernames, dict) else []
 
         groups = get_groups(user_id)
-        if isinstance(groups, dict) and groups.get('error'):
-            groups = [] 
-        full_data['groups'] = groups
+        full_data['groups'] = groups if not isinstance(groups, dict) else []
 
         about_me = get_about_me(user_id)
-        if isinstance(about_me, dict) and about_me.get('error'):
-            about_me = "Not available" 
-        full_data['about_me'] = about_me
+        full_data['about_me'] = about_me if not isinstance(about_me, dict) else "Not available"
 
         friends = get_entity_list(user_id, "friends")
-        if isinstance(friends, dict) and friends.get('error'):
-            friends = [] 
-        full_data['friends_list'] = friends
+        full_data['friends_list'] = friends if not isinstance(friends, dict) else []
 
         followers = get_entity_list(user_id, "followers")
-        if isinstance(followers, dict) and followers.get('error'):
-            followers = [] 
-        full_data['followers_list'] = followers
+        full_data['followers_list'] = followers if not isinstance(followers, dict) else []
 
         followings = get_entity_list(user_id, "followings")
-        if isinstance(followings, dict) and followings.get('error'):
-            followings = [] 
-        full_data['following_list'] = followings
+        full_data['following_list'] = followings if not isinstance(followings, dict) else []
         
         badge_ids = get_roblox_badges(user_id)
         if isinstance(badge_ids, dict) and badge_ids.get('error'):
             full_data['roblox_badges'] = ["Error fetching badges"] 
         else:
             full_data['roblox_badges'] = [ROBLOX_BADGE_TABLE[bid] for bid in badge_ids if bid in ROBLOX_BADGE_TABLE]
+
+        promo_channels = get_user_promo_channels(user_id)
+        full_data['promotion_channels'] = promo_channels
         
         if cache_username and use_cache:
             write_to_cache(cache_username, full_data)
