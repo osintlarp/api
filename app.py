@@ -218,13 +218,8 @@ def api_report_user():
     user_id = request.args.get('userID')
     if not user_id:
         return jsonify({"error": "userID missing"}), 400
-    
-    result = report_user(
-        target_user_id=user_id,
-        headers=headers_local,
-        cookies=session_cookies
-    )
-    
+
+    result = roblox.report_user(user_id)
     return jsonify(result)
     
 @app.route('/v1/osint/github')
