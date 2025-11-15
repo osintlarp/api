@@ -234,17 +234,16 @@ def get_roblox_osint():
         print(f"Error in roblox endpoint: {e}")
         return jsonify({'error': 'An internal server error occurred'}), 500
 
-@app.route("/v1/osint/roblox/report_user")
-def report_user():
-    target_user_id = request.args.get("userID")
-    if not target_user_id:
+@app.route('/v1/osint/roblox/report_user', methods=['GET'])
+def report_roblox_user_direct():
+    user_id = request.args.get("userID")
+    if not user_id:
         return jsonify({"error": "Missing userID"}), 400
 
-    csrf_token = get_csrf_token()
-    if not csrf_token:
-        return jsonify({"error": "Failed to fetch CSRF token"}), 500
+    ROBLOSECURITY = ".ROBLOSECURITY=_|WARNING:-DO-NOT-SHARE-THIS.--Sharing-this-will-allow-someone-to-log-in-as-you-and-to-steal-your-ROBUX-and-items.|_CAEaAhACIhwKBGR1aWQSFDExNDEyNzEzMzM3MjY2OTQzOTExKAE.3evn987phyHfKAw38v6x42_qFlwBIRvnH7PhNRIJKPjkIvvRUe1i00ZygupYIgq1Wk89HNG4xjxUz1XQhumdNGYF8OjypxjHulo5S1RZLvgmJuy0awwk4JJ4tt9PDKsUbY1nwwThUUkDavnAmTti1z4iBxkaw-CsHqyVQ6BuRa7L2eP_cNtgELmY3N9avNYcug7jhO9tn14ZnW0RzZMb3naHE7dnNR68sygtjNLtLBEFr-jkK_Vs5Tc8aXlFq_c_-Fjok9be1wof5cxSOef4S7uNpsElc8HJPChle62nCEJffWbdx9KdYb1jREbUBxExmPIHHk5AOHzXmnyqlo7sinhyrSIbkrwsC58tffebYbgrlT-O0x0XfI_1d3ZSWlutsrNb303mcU6tU7cbRESYmTRyt-QIDNzypa5XUSOH3lAQy_J1OIqWGjZ5b2cfVF1xf1tEdKEXcWvWFadCzpwjIxk5vpEYsOBkL2PuRcb14upo1KjpJqDfPnIqoa1AM4au0DyF84_N8M-dRnAyV6UTrFIZNYWBk8lv7d9D2l1jWTh1x_UqUvmU5YdumOp22aLQeaB8fa7204ob05NjTsXqPkX9zVEeD75Fv8BnwJ1ua0QYN6u3PEjBD-gqTfVXLF3v2g95A_CklChP46XRPKvYGywoAm8dOUBaq8XcKfelhZ-K3GfesQhrK9-wFGI67-qebZ4PIPqt0J4fMAy883oiz8XFLNgEicSYlkOpt5UZVRFptG0cqsfF683-I6NXVA1PGsWsDQ"
 
     url = "https://apis.roblox.com/abuse-reporting/v2/abuse-report"
+
     headers = {
         "content-type": "application/json;charset=utf-8",
         "accept": "application/json, text/plain, */*",
@@ -255,10 +254,23 @@ def report_user():
         "origin": "https://www.roblox.com",
         "user-agent": "Mozilla/5.0 (iPhone; iPhone17,5; CPU iPhone OS 26.1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Mobile/9B176 ROBLOX iOS App 2.698.937 Hybrid RobloxApp/2.698.937 (GlobalDist; AppleAppStore)",
         "referer": "https://www.roblox.com/",
-        "x-csrf-token": csrf_token,
+        "x-csrf-token": "tXNcRQFHmFiP",
         "sec-fetch-dest": "empty"
     }
-    cookies = {".ROBLOSECURITY": ROBLOSECURITY}
+
+    cookies = {
+        "RBXSessionTracker": "sessionid=d5eb8db7-388e-40c9-b7df-777bed263379",
+        "RBXPaymentsFlowContext": "d9cee2b1-75c3-4e2e-b697-f489120252d0",
+        "_rbldh": "10748321733087359080",
+        ".ROBLOSECURITY": ROBLOSECURITY,
+        "GuestData": "UserID=-1342368321",
+        "RBXEventTrackerV2": "CreateDate=11/11/2025 05:33:05&rbxid=9923047635&browserid=1758052144156004",
+        "RBXThemeOverride": "dark",
+        "__stripe_mid": "3291ce72-7dfa-4909-b618-aa5e3779da3690c2c5",
+        "__stripe_sid": "e652d456-7c8d-4322-abfc-3f4d2855e82a03c175",
+        "rbx-ip2": "1",
+        "rbxas": "78327c2bf7908856ffe243c7589cf65d85d2dab3cacf0305d1f466363e38c7d9"
+    }
 
     payload = {
         "tags": {
@@ -267,12 +279,22 @@ def report_user():
             "REPORTED_ABUSE_VECTOR": {"valueList": [{"data": "user_profile"}]},
             "REPORTER_COMMENT": {"valueList": [{"data": ""}]},
             "SUBMITTER_USER_ID": {"valueList": [{"data": "9926480500"}]},
-            "REPORT_TARGET_USER_ID": {"valueList": [{"data": target_user_id}]}
+            "REPORT_TARGET_USER_ID": {"valueList": [{"data": str(user_id)}]}
         }
     }
 
-    r = requests.post(url, headers=headers, cookies=cookies, data=json.dumps(payload))
-    return jsonify({"status": r.status_code, "response": r.json() if r.text else {}}), r.status_code
+    response = requests.post(url, headers=headers, cookies=cookies, data=json.dumps(payload))
+
+    try:
+        return jsonify({
+            "status": response.status_code,
+            "response": response.json()
+        })
+    except:
+        return jsonify({
+            "status": response.status_code,
+            "response": response.text
+        })
     
 @app.route('/v1/osint/github')
 @api_usage_decorator(optional=True)
