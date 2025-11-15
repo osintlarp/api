@@ -401,8 +401,12 @@ def get_user_info(identifier, use_cache=True, **options):
         else:
             full_data['roblox_badges'] = [ROBLOX_BADGE_TABLE[bid] for bid in badge_ids if bid in ROBLOX_BADGE_TABLE]
 
-        promo_channels = get_user_promo_channels(user_id)
-        full_data['promotion_channels'] = promo_channels
+        promo_resp = get_user_promo_channels(user_id)
+        safe_channels = {}
+        if isinstance(promo_resp, dict):
+            if "promotionChannels" in promo_resp and isinstance(promo_resp["promotionChannels"], dict):
+                safe_channels = promo_resp["promotionChannels"]
+        full_data['promotion_channels'] = safe_channels
         
         if cache_username and use_cache:
             write_to_cache(cache_username, full_data)
