@@ -263,11 +263,7 @@ def get_user_promo_channels(user_id):
     r, err = try_request("get", url, headers=headers, cookies=cookies)
     
     if err:
-        return {
-            "status_code": getattr(r, 'status_code', None),
-            "promotionChannels": [],
-            "error": err
-        }
+        return {"status_code": getattr(r, 'status_code', None), "promotionChannels": [], "error": err}
     
     if r and r.status_code == 200:
         try:
@@ -275,22 +271,11 @@ def get_user_promo_channels(user_id):
             channels = data.get("promotionChannels")
             if channels is None:
                 channels = []
-            return {
-                "status_code": r.status_code,
-                "promotionChannels": channels
-            }
+            return {"status_code": r.status_code, "promotionChannels": channels}
         except Exception as e:
-            return {
-                "status_code": r.status_code,
-                "promotionChannels": [],
-                "error": f"Failed to parse JSON: {e}"
-            }
+            return {"status_code": r.status_code, "promotionChannels": [], "error": f"Failed to parse JSON: {e}"}
     
-    return {
-        "status_code": getattr(r, 'status_code', None),
-        "promotionChannels": [],
-        "error": "Failed to fetch promo channels"
-    }
+    return {"status_code": getattr(r, 'status_code', None), "promotionChannels": [], "error": "Failed to fetch promo channels"}
 
 def get_user_info(identifier, use_cache=True, **options):
     cache_username = None
