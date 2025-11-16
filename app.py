@@ -254,7 +254,7 @@ def report_roblox_user_direct():
         "origin": "https://www.roblox.com",
         "user-agent": "Mozilla/5.0 (iPhone; iPhone17,5; CPU iPhone OS 26.1 like Mac OS X) AppleWebKit/534.46 (KHTML, like Gecko) Mobile/9B176 ROBLOX iOS App 2.698.937 Hybrid RobloxApp/2.698.937 (GlobalDist; AppleAppStore)",
         "referer": "https://www.roblox.com/",
-        "x-csrf-token": "tXNcRQFHmFiP",
+        "x-csrf-token": "qKw8agYjPjhz",
         "sec-fetch-dest": "empty"
     }
 
@@ -295,7 +295,7 @@ def report_roblox_user_direct():
             "status": response.status_code,
             "response": response.text
         })
-    
+
 @app.route('/v1/osint/github')
 @api_usage_decorator(optional=True)
 def get_github_osint():
